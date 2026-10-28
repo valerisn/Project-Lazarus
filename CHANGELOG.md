@@ -34,6 +34,18 @@ Nothing is tagged yet. Everything below is on `main` as version 0.1.0.
 
 - `tools/il2cpp_meta.py`: IL2CPP metadata v29 reader for finding classes and methods, with nested types shown as `Outer/Inner` (#7).
 
+### Security
+
+From the 2026-10-28 review (details in [SECURITY.md](SECURITY.md#review-history)):
+
+- A mod folder must now match its mod id, and duplicate ids load nothing. This closes a decoy folder running its DLL under an id you enabled.
+- Uninstall removes only installed and Lazarus-generated files; mods you added are kept and listed.
+- Install manifests with paths outside `version.dll` / `Lazarus\` are refused.
+- Save-deleting developer cheats require `cheat-unsafe`.
+- User profile paths are redacted from `lazarus.log` as `%USERPROFILE%`.
+- CI actions pinned to commit SHAs, Dependabot for actions, read-only CI token, `SHA256SUMS.txt` in every build, tag-triggered releases with checksums, `main` protected against force-push and deletion.
+- fps-counter loads `d3d11`/`d3d12`/`dxgi` from System32 only.
+
 ### Fixed
 
 - The FPS overlay showed 46 at a 45 cap (frame-count quantization). It now measures from QPC frame timestamps.

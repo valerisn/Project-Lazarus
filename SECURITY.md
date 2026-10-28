@@ -24,11 +24,14 @@ What Lazarus *does* promise:
 |---|---|
 | A mod runs only if you enabled it | Mods load only when their id is listed in `[mods] enabled` in `lazarus.ini`. Dropping a folder into `mods/` is never enough. |
 | A manifest can't point at a DLL outside its folder | `mod.ini` `dll =` must be a bare file name; paths, drive letters and `..` are rejected. |
+| A mod can't impersonate another | A mod's folder name must equal its id, and if two mods claim the same id, neither loads. Otherwise a decoy folder that sorts first could run its DLL under the id you enabled. |
 | You can always get back to a clean game | SHIFT at startup (safe mode), `[loader] enabled = false`, automatic quarantine of mods that crash during startup, or deleting `version.dll`. |
-| The installer only removes what it installed | Uninstall works from a hash-checked install manifest and refuses to delete a `version.dll` it didn't put there unless you pass `-Force`. |
+| The installer only removes what it installed | Uninstall removes the files in its install manifest plus Lazarus's own runtime output, and leaves everything else (such as mods you added) in place. It won't delete a `version.dll` it didn't put there unless you pass `-Force`. A manifest containing paths outside `version.dll` and `Lazarus\` is refused outright. |
 | No network activity | The loader and bundled mods make no network connections and never update themselves. |
 | No elevated privileges | Nothing needs administrator rights. If the game folder isn't writable, the installer stops and says so instead of elevating. |
 | Game files are never modified | Installing only adds `version.dll` and `Lazarus\`. |
+| Logs are safe to share | Paths under your user profile are written as `%USERPROFILE%`, so a pasted log doesn't reveal your Windows username. |
+| The console won't wipe your save by accident | Developer-cheat methods that delete or overwrite saves only run through the explicit `cheat-unsafe` command. |
 
 ## In scope
 
@@ -48,4 +51,10 @@ What Lazarus *does* promise:
 
 ## Distribution safety
 
-Only download Lazarus from this repository (CI artifacts, and later GitHub releases). Lazarus is built by public CI from public source, so you can check what you're running. Treat Lazarus builds from anywhere else as untrusted.
+Only download Lazarus from this repository's [releases](https://github.com/valerisn/Project-Lazarus/releases) or CI artifacts. Both are built by public CI from public source and ship `SHA256SUMS.txt`; the README explains how to check a file against it. Treat Lazarus builds from anywhere else as untrusted.
+
+Build pipeline hardening: workflow actions are pinned to full commit SHAs and kept current by Dependabot. The default CI token is read-only, and only the release job gets write access. `main` can't be force-pushed or deleted. Secret scanning and push protection are on.
+
+## Review history
+
+* **2026-10-28, internal review.** Found and fixed: mod id spoofing via a decoy folder (medium), uninstall deleting user-added mods (medium), unvalidated install-manifest paths (low), save-deleting cheats reachable from the plain `cheat` command (low), Windows username in logs (low), unpinned CI actions with no published checksums (low), and graphics DLLs loaded by bare name (hardening). Commits c08e37f..9c184e1.
