@@ -115,7 +115,9 @@ HWND make_dummy_window() {
 // Throwaway device + swapchain just to read the swapchain vtable. Everything
 // is loaded dynamically so a missing d3d12.dll can't stop the mod loading.
 void hook_d3d11(HWND wnd) {
-    HMODULE d3d11 = LoadLibraryW(L"d3d11.dll");
+    // System32 only: d3d11/d3d12/dxgi aren't KnownDLLs, so a bare name would
+    // check the game folder first (security review #7)
+    HMODULE d3d11 = LoadLibraryExW(L"d3d11.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!d3d11) return;
     auto create = reinterpret_cast<PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN>(
         GetProcAddress(d3d11, "D3D11CreateDeviceAndSwapChain"));
@@ -147,8 +149,8 @@ void hook_d3d11(HWND wnd) {
 }
 
 void hook_d3d12(HWND wnd) {
-    HMODULE d3d12 = LoadLibraryW(L"d3d12.dll");
-    HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+    HMODULE d3d12 = LoadLibraryExW(L"d3d12.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    HMODULE dxgi = LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!d3d12 || !dxgi) return;
     auto create_device = reinterpret_cast<PFN_D3D12_CREATE_DEVICE>(GetProcAddress(d3d12, "D3D12CreateDevice"));
     auto create_factory = reinterpret_cast<HRESULT(WINAPI*)(REFIID, void**)>(GetProcAddress(dxgi, "CreateDXGIFactory1"));
