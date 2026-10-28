@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-#define LAZARUS_API_VERSION 1
+#define LAZARUS_API_VERSION 2
 
 #define LAZARUS_OK 0
 #define LAZARUS_ERR_INVALID_ARG 1
@@ -53,6 +53,12 @@ typedef struct LazarusMod LazarusMod;
 /* scene_name is UTF-8 and only valid during the call.
  * mode: 0 = Single, 1 = Additive (UnityEngine.SceneManagement.LoadSceneMode). */
 typedef void (*LazarusSceneLoadedFn)(void* user, const char* scene_name, int build_index, int mode);
+
+/* v2 */
+typedef void (*LazarusTaskFn)(void* user);
+typedef void (*LazarusPrintFn)(void* ctx, const char* text);
+/* argv[0] is the command name. Print output with print(print_ctx, "..."). */
+typedef void (*LazarusCommandFn)(void* user, int argc, const char** argv, LazarusPrintFn print, void* print_ctx);
 
 typedef struct LazarusApi {
     uint32_t struct_size; /* sizeof(LazarusApi) as compiled into the loader */
@@ -99,6 +105,27 @@ typedef struct LazarusApi {
      * earliest point where calling engine APIs is safe. Exceptions thrown out
      * of a callback disable that callback, the game keeps running. */
     int (*on_scene_loaded)(LazarusMod* self, LazarusSceneLoadedFn fn, void* user);
+
+    /* ---- v2 (check struct_size / api_version >= 2 before use) ---- */
+
+    /* Called once per frame on the main thread (gated on Time.frameCount).
+     * Keep it cheap. Returns LAZARUS_ERR_NOT_READY if the loader couldn't
+     * find a per-frame engine callback to hook. */
+    int (*on_update)(LazarusMod* self, LazarusTaskFn fn, void* user);
+
+    /* Thread-safe: queue fn to run on the main thread at the next frame.
+     * This is the only safe way to touch game/engine state from your own
+     * threads (UI threads, timers, etc.). */
+    int (*run_on_main)(LazarusMod* self, LazarusTaskFn fn, void* user);
+
+    /* Console commands. Names: letters, digits, _ . - (case-insensitive).
+     * Handlers run on the main thread. A command registered by another mod
+     * can't be replaced (LAZARUS_ERR_INVALID_ARG). */
+    int (*register_command)(LazarusMod* self, const char* name, const char* help, LazarusCommandFn fn, void* user);
+
+    /* Main thread only (use run_on_main). Returns LAZARUS_OK, or
+     * LAZARUS_ERR_NOT_FOUND for an unknown command (a hint gets printed). */
+    int (*execute_command)(const char* line, LazarusPrintFn print, void* print_ctx);
 } LazarusApi;
 
 #ifdef __cplusplus

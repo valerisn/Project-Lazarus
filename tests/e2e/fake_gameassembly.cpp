@@ -48,6 +48,13 @@ __declspec(noinline) void Internal_SceneLoaded(int32_t handle, int32_t mode, con
     if (handle < 0 || mode < 0) OutputDebugStringA("impossible");
 }
 
+volatile int g_notify_calls = 0;
+__declspec(noinline) void NotifyBeforeUpdate(int32_t type, const void*) {
+    g_notify_calls = g_notify_calls + 1;
+    if (type < 0) OutputDebugStringA("impossible");
+}
+volatile int g_frame = 0;
+
 __declspec(noinline) int FakeGame_GetValue(const void*) {
     volatile int v = 1;
     return v;
@@ -55,11 +62,15 @@ __declspec(noinline) int FakeGame_GetValue(const void*) {
 
 FakeMethodInfo g_scene_methods[] = {{(void*)&Internal_SceneLoaded, "Internal_SceneLoaded", 2}};
 FakeMethodInfo g_game_methods[] = {{(void*)&FakeGame_GetValue, "GetValue", 0}};
+FakeMethodInfo g_input_methods[] = {{(void*)&NotifyBeforeUpdate, "NotifyBeforeUpdate", 1}};
 FakeClass g_core_classes[] = {{"UnityEngine.SceneManagement", "SceneManager", g_scene_methods, 1}};
 FakeClass g_game_classes[] = {{"Lucille.Fake", "FakeGame", g_game_methods, 1}};
-FakeImage g_images[] = {{"UnityEngine.CoreModule.dll", g_core_classes, 1}, {"Lucille.Fake.dll", g_game_classes, 1}};
-FakeAssembly g_assemblies[] = {{&g_images[0]}, {&g_images[1]}};
-void* g_assembly_ptrs[] = {&g_assemblies[0], &g_assemblies[1]};
+FakeClass g_input_classes[] = {{"UnityEngineInternal.Input", "NativeInputSystem", g_input_methods, 1}};
+FakeImage g_images[] = {{"UnityEngine.CoreModule.dll", g_core_classes, 1},
+                        {"Lucille.Fake.dll", g_game_classes, 1},
+                        {"UnityEngine.InputModule.dll", g_input_classes, 1}};
+FakeAssembly g_assemblies[] = {{&g_images[0]}, {&g_images[1]}, {&g_images[2]}};
+void* g_assembly_ptrs[] = {&g_assemblies[0], &g_assemblies[1], &g_assemblies[2]};
 int g_domain = 0;
 
 FakeString g_scene_names[] = {{L"Boot"}, {L"MainMenu"}, {L"Prison"}};
@@ -99,6 +110,7 @@ void icall_set_resolution(int32_t w, int32_t h, int32_t mode, int32_t hz) {
 int32_t icall_screen_w() { return g_res_w; }
 int32_t icall_screen_h() { return g_res_h; }
 int32_t icall_get_mode() { return g_res_mode; }
+int32_t icall_frame_count() { return g_frame; }
 
 // fake System.String[] with the real Il2CppArray layout: header, bounds,
 // max_length, then elements at +32
@@ -134,6 +146,7 @@ const IcallEntry g_icalls[] = {
     {"UnityEngine.Screen::get_width", (void*)&icall_screen_w},
     {"UnityEngine.Screen::get_height", (void*)&icall_screen_h},
     {"UnityEngine.Screen::get_fullScreenMode", (void*)&icall_get_mode},
+    {"UnityEngine.Time::get_frameCount", (void*)&icall_frame_count},
 };
 
 }  // namespace
@@ -145,7 +158,7 @@ EXPORT int il2cpp_init(const char*) {
 EXPORT void il2cpp_shutdown() { g_shutdown_called = 1; }
 EXPORT void* il2cpp_domain_get() { return &g_domain; }
 EXPORT void** il2cpp_domain_get_assemblies(void*, size_t* size) {
-    *size = 2;
+    *size = 3;
     return g_assembly_ptrs;
 }
 EXPORT void* il2cpp_assembly_get_image(void* a) { return static_cast<FakeAssembly*>(a)->image; }
@@ -186,6 +199,15 @@ EXPORT int fake_game_get_value() {
     auto fn = reinterpret_cast<int (*)(const void*)>(g_game_methods[0].methodPointer);
     return fn(&g_game_methods[0]);
 }
+// one engine frame: the input system pumps twice (dynamic + before-render),
+// which is exactly why the loader has to gate on frameCount
+EXPORT void fake_engine_frame() {
+    g_frame = g_frame + 1;
+    auto fn = reinterpret_cast<void (*)(int32_t, const void*)>(g_input_methods[0].methodPointer);
+    fn(1, &g_input_methods[0]);
+    fn(4, &g_input_methods[0]);
+}
+
 // the game resetting things between scenes, like real games love to do
 EXPORT void fake_game_meddle() {
     g_target_frame_rate = 30;
@@ -204,5 +226,6 @@ EXPORT int fake_state(const char* what) {
     if (!std::strcmp(what, "res_h")) return g_res_h;
     if (!std::strcmp(what, "res_mode")) return g_res_mode;
     if (!std::strcmp(what, "res_hz")) return g_res_hz;
+    if (!std::strcmp(what, "notify_calls")) return g_notify_calls;
     return -999;
 }

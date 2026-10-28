@@ -149,6 +149,16 @@ int wmain() {
         expect(run.has("startup complete: 1 mod(s) active"), "startup summary");
         expect(run.has("shutdown complete"), "shutdown log");
 
+        // v2: frame tick, main-thread queue, commands
+        expect(run.r("notify_calls") == "10", "engine pumped input twice per frame: " + run.r("notify_calls"));
+        expect(run.has("frame tick hooked (input: yes"), "tick hook");
+        expect(run.has("v2 update callbacks: 5"), "on_update gated to once per frame (5 frames, 10 pumps)");
+        expect(run.has("v2 task ran on main thread"), "run_on_main from a worker thread lands on main");
+        expect(run.has("v2 commands: rc=0,2,0 printed=[echo:hello world 2"), "command args + quoting");
+        expect(run.has("unknown command 'no.such.command'"), "unknown command hint");
+        expect(run.has("command 'test.crash' crashed (exception 0xC0000005)"), "crashing command contained");
+        expect(run.has("could not register command 'help'"), "can't steal another owner's command");
+
         // regression from the first live run: some non-Unity process in the
         // game folder (crash handler) loaded the proxy after exit and wiped
         // bootstrap.log. this runner isn't a Unity process either.

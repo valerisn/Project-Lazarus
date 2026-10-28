@@ -9,6 +9,7 @@
 
 #include <MinHook.h>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstring>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "core/command.h"
 #include "core/config.h"
 #include "core/ini.h"
 #include "core/log.h"
@@ -283,6 +285,95 @@ int api_on_scene_loaded(LazarusMod* self, LazarusSceneLoadedFn fn, void* user) {
     return LAZARUS_OK;
 }
 
+// ------------------------------------------------- v2: update / tasks / cmds
+
+struct UpdateCb {
+    LazarusMod* mod;
+    LazarusTaskFn fn;
+    void* user;
+    bool dead;
+};
+std::vector<UpdateCb> g_update_cbs;
+bool g_update_ready = false;
+
+struct Task {
+    LazarusMod* mod;
+    LazarusTaskFn fn;
+    void* user;
+};
+std::mutex g_task_mu;
+std::vector<Task> g_tasks;  // filled from any thread, drained on main
+
+lz::CommandRegistry g_cmds;
+
+bool guarded_task(LazarusTaskFn fn, void* user, DWORD* code) {
+    __try {
+        fn(user);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *code = GetExceptionCode();
+        return false;
+    }
+}
+
+bool guarded_command(LazarusCommandFn fn, void* user, int argc, const char** argv, LazarusPrintFn print, void* ctx,
+                     DWORD* code) {
+    __try {
+        fn(user, argc, argv, print, ctx);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        *code = GetExceptionCode();
+        return false;
+    }
+}
+
+int api_on_update(LazarusMod* self, LazarusTaskFn fn, void* user) {
+    if (!self || !fn) return LAZARUS_ERR_INVALID_ARG;
+    if (!g_update_ready) return LAZARUS_ERR_NOT_READY;
+    g_update_cbs.push_back({self, fn, user, false});
+    return LAZARUS_OK;
+}
+
+int api_run_on_main(LazarusMod* self, LazarusTaskFn fn, void* user) {
+    if (!self || !fn) return LAZARUS_ERR_INVALID_ARG;
+    if (!g_update_ready) return LAZARUS_ERR_NOT_READY;
+    std::lock_guard<std::mutex> g(g_task_mu);
+    g_tasks.push_back({self, fn, user});
+    return LAZARUS_OK;
+}
+
+void print_trampoline(void* ctx, const char* text) {
+    (*static_cast<const lz::CommandRegistry::Print*>(ctx))(text ? text : "");
+}
+
+int api_register_command(LazarusMod* self, const char* name, const char* help, LazarusCommandFn fn, void* user) {
+    if (!self || !name || !fn) return LAZARUS_ERR_INVALID_ARG;
+    std::string tag = self->tag;
+    bool ok = g_cmds.add(name, help ? help : "", tag,
+                         [fn, user, tag](const std::vector<std::string>& args, const lz::CommandRegistry::Print& print) {
+                             std::vector<const char*> argv;
+                             for (auto& a : args) argv.push_back(a.c_str());
+                             DWORD code = 0;
+                             if (!guarded_command(fn, user, (int)argv.size(), argv.data(), &print_trampoline,
+                                                  (void*)&print, &code)) {
+                                 LZ_ERROR(tag, "command '%s' crashed (exception 0x%08lX)", args[0].c_str(), code);
+                                 print("command crashed, see lazarus.log");
+                             }
+                         });
+    if (!ok) LZ_WARN(tag, "could not register command '%s' (invalid name or taken by another mod)", name);
+    return ok ? LAZARUS_OK : LAZARUS_ERR_INVALID_ARG;
+}
+
+int api_execute_command(const char* line, LazarusPrintFn print, void* ctx) {
+    if (!line) return LAZARUS_ERR_INVALID_ARG;
+    lz::CommandRegistry::Print p = [print, ctx](const std::string& s) {
+        if (print) print(ctx, s.c_str());
+    };
+    LZ_DEBUG("console", "> %s", line);
+    auto r = g_cmds.execute(line, p);
+    return r == lz::CommandRegistry::Result::NotFound ? LAZARUS_ERR_NOT_FOUND : LAZARUS_OK;
+}
+
 void drop_mod_hooks(LazarusMod* m) {
     for (void* t : m->hooks) {
         MH_DisableHook(t);
@@ -291,6 +382,102 @@ void drop_mod_hooks(LazarusMod* m) {
     m->hooks.clear();
     for (auto& cb : g_scene_cbs)
         if (cb.mod == m) cb.dead = true;
+    for (auto& cb : g_update_cbs)
+        if (cb.mod == m) cb.dead = true;
+    g_cmds.remove_owner(m->tag);
+    std::lock_guard<std::mutex> g(g_task_mu);
+    g_tasks.erase(std::remove_if(g_tasks.begin(), g_tasks.end(), [m](const Task& t) { return t.mod == m; }),
+                  g_tasks.end());
+}
+
+// ------------------------------------------------------------ frame tick
+//
+// No clean "every frame" callback reaches managed code in a stripped IL2CPP
+// build, so we borrow two the engine always calls: the input system's
+// NotifyBeforeUpdate (game uses the new Input System, so it fires every
+// frame) and BeforeRenderHelper.Invoke. Either can fire several times a
+// frame, so update callbacks are gated on Time.frameCount.
+
+using NotifyBeforeUpdate_t = void (*)(int32_t update_type, const void* method);
+using BeforeRender_t = void (*)(const void* method);
+NotifyBeforeUpdate_t g_orig_notify = nullptr;
+BeforeRender_t g_orig_before_render = nullptr;
+int32_t (*g_frame_count)() = nullptr;
+int32_t g_last_frame = INT32_MIN;
+bool g_in_tick = false;
+
+void tick() {
+    if (g_in_tick) return;  // a task that pumps the engine could re-enter us
+    g_in_tick = true;
+
+    std::vector<Task> tasks;
+    {
+        std::lock_guard<std::mutex> g(g_task_mu);
+        tasks.swap(g_tasks);
+    }
+    for (auto& t : tasks) {
+        DWORD code = 0;
+        if (!guarded_task(t.fn, t.user, &code))
+            LZ_ERROR(t.mod->tag, "main-thread task crashed (exception 0x%08lX)", code);
+    }
+
+    if (!g_frame_count && g_il2cpp_ok)
+        g_frame_count = reinterpret_cast<int32_t (*)()>(g_il2cpp.resolve_icall("UnityEngine.Time::get_frameCount"));
+    int32_t frame = g_frame_count ? g_frame_count() : g_last_frame + 1;
+    if (frame != g_last_frame) {
+        g_last_frame = frame;
+        for (size_t i = 0; i < g_update_cbs.size(); ++i) {
+            auto cb = g_update_cbs[i];
+            if (cb.dead) continue;
+            DWORD code = 0;
+            if (!guarded_task(cb.fn, cb.user, &code)) {
+                g_update_cbs[i].dead = true;
+                LZ_ERROR(cb.mod->tag, "update callback crashed (exception 0x%08lX), callback disabled", code);
+            }
+        }
+    }
+    g_in_tick = false;
+}
+
+void hk_notify_before_update(int32_t update_type, const void* method) {
+    g_orig_notify(update_type, method);
+    tick();
+}
+
+void hk_before_render(const void* method) {
+    g_orig_before_render(method);
+    tick();
+}
+
+void install_update_hook() {
+    void* t1 = method_pointer_impl(find_method_impl("UnityEngine.InputModule.dll", "UnityEngineInternal.Input",
+                                                    "NativeInputSystem", "NotifyBeforeUpdate", 1));
+    void* t2 = method_pointer_impl(
+        find_method_impl("UnityEngine.CoreModule.dll", "UnityEngine", "BeforeRenderHelper", "Invoke", 0));
+    if (t1 && api_hook_create(&g_loader_owner, t1, reinterpret_cast<void*>(&hk_notify_before_update),
+                              reinterpret_cast<void**>(&g_orig_notify)) == LAZARUS_OK)
+        g_update_ready = true;
+    if (t2 && api_hook_create(&g_loader_owner, t2, reinterpret_cast<void*>(&hk_before_render),
+                              reinterpret_cast<void**>(&g_orig_before_render)) == LAZARUS_OK)
+        g_update_ready = true;
+    if (g_update_ready)
+        LZ_INFO("loader", "frame tick hooked (input: %s, before-render: %s)", g_orig_notify ? "yes" : "no",
+                g_orig_before_render ? "yes" : "no");
+    else
+        LZ_WARN("loader", "no per-frame engine callback found - on_update/run_on_main/console unavailable");
+}
+
+void register_builtin_commands() {
+    g_cmds.add("help", "list commands", "loader", [](const std::vector<std::string>& args, const lz::CommandRegistry::Print& p) {
+        std::string filter = args.size() > 1 ? lz::to_lower(args[1]) : "";
+        for (auto& kv : g_cmds.entries())
+            if (filter.empty() || kv.first.find(filter) != std::string::npos)
+                p(kv.first + (kv.second.help.empty() ? "" : "  -  " + kv.second.help));
+    });
+    g_cmds.add("mods", "list loaded mods", "loader", [](const std::vector<std::string>&, const lz::CommandRegistry::Print& p) {
+        for (auto& m : g_mods)
+            p(m->manifest.id + " v" + m->manifest.version + (m->active ? "  active" : "  FAILED"));
+    });
 }
 
 // ------------------------------------------------------------ scene hook
@@ -500,9 +687,15 @@ void start() {
     g_api.hook_create = &api_hook_create;
     g_api.hook_remove = &api_hook_remove;
     g_api.on_scene_loaded = &api_on_scene_loaded;
+    g_api.on_update = &api_on_update;
+    g_api.run_on_main = &api_run_on_main;
+    g_api.register_command = &api_register_command;
+    g_api.execute_command = &api_execute_command;
 
     g_loader_owner.tag = "loader";
     install_scene_hook();
+    install_update_hook();
+    register_builtin_commands();
 
     lz::BootGuard guard(root / "state");
     auto stale = guard.take_stale_lock();
@@ -631,6 +824,7 @@ void on_il2cpp_shutdown() {
         drop_mod_hooks(m.get());
         m->active = false;
     }
+    g_update_ready = false;
     drop_mod_hooks(&g_loader_owner);
     MH_Uninitialize();
     LZ_INFO("loader", "shutdown complete");

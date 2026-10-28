@@ -49,6 +49,45 @@ void on_scene(void*, const char* name, int idx, int mode) {
     if (g_set_fps) g_set_fps((int)g_api->config_get_int(g_self, "test", "target_fps", 60));
 }
 
+// ---- v2 checks, reported via the log so the event-order asserts stay put
+
+DWORD g_main_tid = 0;
+int g_updates = 0;
+std::string g_printed;
+
+void collect(void*, const char* text) { g_printed += text; }
+
+void echo_cmd(void*, int argc, const char** argv, LazarusPrintFn print, void* ctx) {
+    std::string s = "echo:";
+    for (int i = 1; i < argc; ++i) s += std::string(i > 1 ? " " : "") + argv[i];
+    print(ctx, s.c_str());
+}
+
+void crash_cmd(void*, int, const char**, LazarusPrintFn, void*) {
+    volatile int* p = nullptr;
+    *p = 1;
+}
+
+void on_update(void*) {
+    ++g_updates;
+    if (g_updates == 2) {
+        int a = g_api->execute_command("test.echo \"hello world\" 2", &collect, nullptr);
+        int b = g_api->execute_command("no.such.command", &collect, nullptr);
+        int c = g_api->execute_command("test.crash", &collect, nullptr);
+        g_api->log(g_self, LAZARUS_LOG_INFO, "v2 commands: rc=%d,%d,%d printed=[%s]", a, b, c, g_printed.c_str());
+    }
+}
+
+void on_main_task(void*) {
+    g_api->log(g_self, LAZARUS_LOG_INFO, "v2 task ran on %s thread",
+               GetCurrentThreadId() == g_main_tid ? "main" : "WRONG");
+}
+
+DWORD WINAPI worker(LPVOID) {
+    g_api->run_on_main(g_self, &on_main_task, nullptr);
+    return 0;
+}
+
 }  // namespace
 
 extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* self, const LazarusApi* api) {
@@ -74,10 +113,23 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* self, const La
     // malformed value -> default + loader warning
     if (api->config_get_bool(self, "test", "not_a_bool", 1) != 1) return 17;
 
+    if (api->api_version >= 2) {
+        g_main_tid = GetCurrentThreadId();
+        if (api->register_command(self, "test.echo", "echo args", &echo_cmd, nullptr) != LAZARUS_OK) return 18;
+        if (api->register_command(self, "test.crash", "AV on purpose", &crash_cmd, nullptr) != LAZARUS_OK) return 19;
+        if (api->register_command(self, "help", "steal loader's help", &echo_cmd, nullptr) == LAZARUS_OK) return 20;
+        if (api->on_update(self, &on_update, nullptr) != LAZARUS_OK) return 21;
+        HANDLE t = CreateThread(nullptr, 0, &worker, nullptr, 0, nullptr);
+        if (t) CloseHandle(t);
+    }
+
     if (!std::strcmp(g_behavior, "fail_init")) return 5;
     if (!std::strcmp(g_behavior, "throw_init")) RaiseException(0xE0000001, 0, 0, nullptr);
     if (!std::strcmp(g_behavior, "exit_in_init")) TerminateProcess(GetCurrentProcess(), 3);
     return 0;
 }
 
-extern "C" __declspec(dllexport) void lazarus_mod_shutdown(LazarusMod*) { event("shutdown"); }
+extern "C" __declspec(dllexport) void lazarus_mod_shutdown(LazarusMod*) {
+    g_api->log(g_self, LAZARUS_LOG_INFO, "v2 update callbacks: %d", g_updates);
+    event("shutdown");
+}

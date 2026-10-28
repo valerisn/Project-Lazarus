@@ -98,6 +98,12 @@ extern "C" __declspec(dllexport) int fake_unity_main(const wchar_t* report_path)
     load_scene(2, 1);  // Prison, additive
     load_scene(1, 0);  // back to MainMenu, single
     std::fprintf(r, "frames_rendered=%d\n", render_frames(60));
+    auto frame = reinterpret_cast<void (*)()>(GetProcAddress(ga, "fake_engine_frame"));
+    for (int i = 0; i < 5; ++i) {
+        frame();
+        Sleep(5);  // give the test mod's background thread a chance to queue work
+    }
+    std::fprintf(r, "notify_calls=%d\n", state("notify_calls"));
     std::fprintf(r, "scene_listener_calls=%d\n", state("scene_listener"));
     std::fprintf(r, "value_in_game=%d\n", get_value());
     for (const char* k : {"target_frame_rate", "vsync", "quality", "lod_x100", "aniso", "res_w", "res_h", "res_mode", "res_hz"})
