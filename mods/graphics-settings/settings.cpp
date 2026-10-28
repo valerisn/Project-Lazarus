@@ -81,6 +81,7 @@ const char* const kDefaultConfig =
     "\r\n"
     "[quality]\r\n"
     "; index into the game's quality levels. The log lists the available names on startup.\r\n"
+    "; NOTE: The Walking Dead: Destinies ships a single level (0 = Ultra), so this does nothing in this game.\r\n"
     "quality_level =\r\n"
     "; level-of-detail distance multiplier. 1 = default, 2 = models stay detailed twice as far away.\r\n"
     "lod_bias =\r\n"

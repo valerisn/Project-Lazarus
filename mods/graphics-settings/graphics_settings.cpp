@@ -9,6 +9,7 @@
 // guaranteed to be up. After that we re-check on every scene load and
 // re-apply if something (the game, a quality preset switch) changed it.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -174,6 +175,33 @@ void apply_all(bool first) {
     if (cfg.anisotropic >= 0) apply<int32_t>("anisotropic filtering", cfg.anisotropic, ic.get_aniso, ic.set_aniso, first);
 }
 
+// Watchdog (issue #8). First live run: cap applied at the first scene, yet
+// the first 10s still averaged 368 fps with no drift seen at scene loads -
+// something flips it between scene loads and flips it back before the next
+// one. Prime suspect is the boot video sequence. Checking two getters every
+// 30 frames is basically free, so just keep putting it back and say who/when.
+int g_watch_frames = 0;
+int g_watch_logs = 0;
+
+void watch_one(const char* what, int32_t want, int32_t (*get)(), void (*set)(int32_t)) {
+    if (!get || !set) return;
+    int32_t cur = get();
+    if (cur == want) return;
+    set(want);
+    // first few in full, then every 50th, so a game that fights us every
+    // frame doesn't turn lazarus.log into a novel
+    if (g_watch_logs < 5 || g_watch_logs % 50 == 0)
+        LOG(LAZARUS_LOG_WARN, "watchdog: %s was %d, put back to %d (correction #%d)", what, cur, want, g_watch_logs + 1);
+    ++g_watch_logs;
+}
+
+void on_update(void*) {
+    if (disabled || !applied_once || ++g_watch_frames < 30) return;
+    g_watch_frames = 0;
+    if (cfg.vsync >= 0) watch_one("vsync", cfg.vsync, ic.get_vsync, ic.set_vsync);
+    if (cfg.target_fps != 0) watch_one("frame rate cap", cfg.target_fps, ic.get_fps, ic.set_fps);
+}
+
 void on_scene(void*, const char* name, int, int mode) {
     if (disabled) return;
     if (!applied_once) {
@@ -193,7 +221,8 @@ void on_scene(void*, const char* name, int, int mode) {
 extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const LazarusApi* a) {
     api = a;
     self = m;
-    if (a->struct_size < sizeof(LazarusApi)) return 1;
+    // built against the v2 header but only v1 fields are required
+    if (a->struct_size < offsetof(LazarusApi, on_update)) return 1;
 
     std::vector<std::string> warnings;
     cfg = gfx::parse(
@@ -212,6 +241,11 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const Lazar
             api->mod_dir(self));
         return 0;  // loaded but idle - not an error
     }
+    // v2 loaders give us a frame tick for the watchdog; on v1 we still work,
+    // just with scene-load re-applies only
+    if (api->api_version >= 2 && (cfg.target_fps != 0 || cfg.vsync >= 0) &&
+        api->on_update(self, &on_update, nullptr) != LAZARUS_OK)
+        LOG(LAZARUS_LOG_WARN, "no frame tick, frame cap watchdog off");
     return api->on_scene_loaded(self, &on_scene, nullptr);
 }
 
