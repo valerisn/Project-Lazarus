@@ -3,9 +3,8 @@
 
 namespace lzrt {
 
-// Swap one entry in `module`'s import address table. Matches the import by
-// name via the import name table, so it works whether or not the IAT is
-// already bound. Returns false if the module doesn't import that function.
+// swaps one IAT slot. matches by name through the INT, so it doesn't care
+// whether the loader already bound the IAT
 bool patch_iat(HMODULE module, const char* import_dll, const char* func, void* replacement, void** original);
 
 }  // namespace lzrt

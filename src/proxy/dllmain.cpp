@@ -1,16 +1,10 @@
-// version.dll proxy - the only file Lazarus adds next to the game exe.
+// the version.dll proxy. UnityPlayer imports VERSION.dll and since it's not a
+// KnownDLL, ours in the game folder wins over System32.
 //
-// Boot sequence:
-//   1. UnityPlayer.dll statically imports VERSION.dll, Windows finds ours in
-//      the game folder first (version.dll isn't a KnownDLL).
-//   2. DllMain: load the real System32 version.dll for forwarding, and patch
-//      UnityPlayer's IAT slot for GetProcAddress. That's it. Nothing heavy
-//      under the loader lock.
-//   3. UnityPlayer later LoadLibrary's GameAssembly.dll and pulls il2cpp_*
-//      functions through GetProcAddress. We hand back our own il2cpp_init and
-//      il2cpp_shutdown wrappers.
-//   4. Our il2cpp_init calls the real one, then starts the runtime (runtime.cpp)
-//      on the main thread with a live IL2CPP domain.
+// DllMain does as little as possible (loader lock): load the real version.dll
+// and patch UnityPlayer's GetProcAddress import. later, when Unity looks up
+// il2cpp_init/il2cpp_shutdown in GameAssembly, it gets our wrappers instead,
+// and the real loader work starts in runtime.cpp once il2cpp is up.
 
 #include <windows.h>
 
@@ -32,8 +26,8 @@ const char* const kVersionExports[17] = {
     "VerQueryValueW",
 };
 
-// every version.dll export returns BOOL/DWORD, so "0 + last error" is a sane
-// failure for anything we couldn't resolve. beats jumping to null.
+// everything in version.dll returns BOOL/DWORD, so 0 is a fine failure.
+// better than jumping to null anyway
 extern "C" ULONG_PTR lz_missing_export() {
     SetLastError(ERROR_PROC_NOT_FOUND);
     return 0;
@@ -44,9 +38,8 @@ bool forward_init() {
     UINT n = GetSystemDirectoryW(path, MAX_PATH);
     if (!n || n > MAX_PATH - 16) return false;
     wcscat_s(path, L"\\version.dll");
-    // LoadLibrary inside DllMain is officially frowned on, but System32
-    // version.dll only depends on kernel32/ntdll which are already loaded,
-    // so there's no lock-order problem here. every proxy DLL does this.
+    // yes, LoadLibrary in DllMain. the real version.dll only needs kernel32
+    // and ntdll which are already in, so there's no deadlock risk
     HMODULE real = LoadLibraryW(path);
     for (int i = 0; i < 17; ++i) {
         void* p = real ? reinterpret_cast<void*>(GetProcAddress(real, kVersionExports[i])) : nullptr;
@@ -75,8 +68,8 @@ void lz_il2cpp_shutdown() {
 }
 
 FARPROC WINAPI hooked_GetProcAddress(HMODULE mod, LPCSTR name) {
-    FARPROC real = GetProcAddress(mod, name);  // our own import, not the patched slot
-    // ordinal lookups have a null high word, don't strcmp those
+    FARPROC real = GetProcAddress(mod, name);  // ours isn't patched, only UnityPlayer's
+    // ordinal lookup, not a string
     if (!real || (reinterpret_cast<ULONG_PTR>(name) >> 16) == 0) return real;
     if (name[0] != 'i' || std::strncmp(name, "il2cpp_", 7) != 0) return real;
 
@@ -98,10 +91,8 @@ void attach() {
 
     HMODULE unity = GetModuleHandleW(L"UnityPlayer.dll");
     if (!unity) {
-        // not the game. first live run caught something (crash handler,
-        // probably) loading us right after the game quit, and the old code
-        // logged here first - which truncated bootstrap.log and wiped the
-        // game's own boot lines. so: no file writes at all in this case.
+        // not the game (the crash handler loads us too, found that out on the
+        // first real run). don't write anything, it used to wipe bootstrap.log
         return;
     }
     lzrt::bootstrap_note(fwd ? "forwarding to system version.dll" : "FAILED to load system version.dll");

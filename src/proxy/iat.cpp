@@ -17,9 +17,8 @@ bool patch_iat(HMODULE module, const char* import_dll, const char* func, void* r
     for (auto desc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); desc->Name; ++desc) {
         if (_stricmp(reinterpret_cast<const char*>(base + desc->Name), import_dll) != 0) continue;
 
-        // INT can be missing on old/odd linkers; then the IAT doubles as the
-        // name table, but only until the loader binds it. UnityPlayer has a
-        // proper INT, this fallback is just paranoia.
+        // UnityPlayer has an INT. the fallback is for weird old linkers and
+        // probably never runs
         auto names = reinterpret_cast<IMAGE_THUNK_DATA64*>(
             base + (desc->OriginalFirstThunk ? desc->OriginalFirstThunk : desc->FirstThunk));
         auto slots = reinterpret_cast<IMAGE_THUNK_DATA64*>(base + desc->FirstThunk);

@@ -1,10 +1,7 @@
-; Export stubs for the version.dll proxy.
-;
-; Each stub is a bare tail-jump through a pointer filled in by
-; forward_init() in dllmain.cpp. Doing it in asm means we never need the
-; real signatures, which matters because GetFileVersionInfoByHandle is
-; undocumented and guessing its prototype wrong would corrupt the stack.
-; Order here must match kVersionExports in dllmain.cpp.
+; forwarding stubs, each one just jumps through lz_real_version[n].
+; asm so we never need the real signatures - GetFileVersionInfoByHandle is
+; undocumented and guessing it wrong would trash the stack.
+; order has to match kVersionExports in dllmain.cpp
 
 EXTERN lz_real_version:QWORD
 

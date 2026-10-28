@@ -1,9 +1,8 @@
-// Loader runtime: everything that happens once IL2CPP is up.
+// everything after il2cpp_init.
 //
-// Design rule: nothing in here is allowed to take the game down. Every call
-// into mod code goes through an SEH guard, every failure is logged and turns
-// into "that mod/feature is off", and if the loader itself blows up we log it
-// and let the game run vanilla.
+// rule for this file: never take the game down. mod code runs under SEH,
+// failures turn into "that mod is off" plus a log line, and if the loader
+// itself explodes the game just runs vanilla
 
 #include "proxy/runtime.h"
 
@@ -32,12 +31,12 @@
 
 namespace fs = std::filesystem;
 
-extern "C" void* lz_real_version[17];  // dllmain.cpp
+extern "C" void* lz_real_version[17];  // filled in dllmain.cpp
 
-// the C API's opaque handle, has to live at global scope to match the header
+// global namespace because that's where the header declared it
 struct LazarusMod {
     lz::ModManifest manifest;
-    std::string tag;  // "mod:<id>" for log lines
+    std::string tag;  // "mod:<id>"
     std::string dir_utf8;
     lz::Ini config;
     HMODULE dll = nullptr;
@@ -54,7 +53,7 @@ namespace {
 HMODULE g_proxy = nullptr;
 wchar_t g_game_dir[MAX_PATH] = {};
 std::mutex g_early_mu;
-std::vector<std::string>* g_early = nullptr;  // leaked on purpose, tiny
+std::vector<std::string>* g_early = nullptr;  // never freed, it's 3 strings
 
 fs::path lazarus_dir() { return fs::path(g_game_dir) / L"Lazarus"; }
 
@@ -115,9 +114,8 @@ void* find_method_impl(const char* assembly, const char* ns, const char* klass, 
     return nullptr;
 }
 
-// MethodInfo's first field is methodPointer in every Unity 2021.x il2cpp
-// (checked against the 2021.3 headers). if a future Unity moves it, this is
-// the one line that breaks.
+// methodPointer is the first field of MethodInfo in 2021.x. if some other
+// unity version moves it, this is what breaks
 void* method_pointer_impl(void* mi) { return mi ? *reinterpret_cast<void**>(mi) : nullptr; }
 
 std::string il2cpp_to_utf8(void* str) {
@@ -134,7 +132,7 @@ std::string il2cpp_to_utf8(void* str) {
 // ------------------------------------------------------------------- state
 
 std::vector<std::unique_ptr<LazarusMod>> g_mods;
-LazarusMod g_loader_owner;  // owns loader-internal hooks so they share the bookkeeping
+LazarusMod g_loader_owner;  // fake mod so our own hooks go through the same bookkeeping
 
 struct SceneCb {
     LazarusMod* mod;
@@ -149,8 +147,7 @@ bool g_build_known = false;
 LazarusApi g_api{};
 
 // ------------------------------------------------------------- SEH guards
-// these can't have C++ objects with destructors in them (C2712), which is
-// why they're tiny and dumb
+// __try can't live in a function with destructors (C2712), so these stay tiny
 
 using ModInitFn = int (*)(LazarusMod*, const LazarusApi*);
 
@@ -302,7 +299,7 @@ struct Task {
     void* user;
 };
 std::mutex g_task_mu;
-std::vector<Task> g_tasks;  // filled from any thread, drained on main
+std::vector<Task> g_tasks;  // any thread pushes, main drains
 
 lz::CommandRegistry g_cmds;
 
@@ -392,11 +389,10 @@ void drop_mod_hooks(LazarusMod* m) {
 
 // ------------------------------------------------------------ frame tick
 //
-// No clean "every frame" callback reaches managed code in a stripped IL2CPP
-// build, so we borrow two the engine always calls: the input system's
-// NotifyBeforeUpdate (game uses the new Input System, so it fires every
-// frame) and BeforeRenderHelper.Invoke. Either can fire several times a
-// frame, so update callbacks are gated on Time.frameCount.
+// there's no nice per-frame hook in a stripped il2cpp build, so we piggyback
+// on two things the engine calls every frame anyway: the input system's
+// NotifyBeforeUpdate and BeforeRenderHelper.Invoke. both can fire more than
+// once a frame, hence the frameCount check
 
 using NotifyBeforeUpdate_t = void (*)(int32_t update_type, const void* method);
 using BeforeRender_t = void (*)(const void* method);
@@ -407,7 +403,7 @@ int32_t g_last_frame = INT32_MIN;
 bool g_in_tick = false;
 
 void tick() {
-    if (g_in_tick) return;  // a task that pumps the engine could re-enter us
+    if (g_in_tick) return;  // a task that pumps the engine would re-enter us
     g_in_tick = true;
 
     std::vector<Task> tasks;
@@ -487,19 +483,18 @@ SceneLoaded_t g_orig_scene_loaded = nullptr;
 void* (*g_scene_get_name)(int32_t) = nullptr;
 int32_t (*g_scene_get_build_index)(int32_t) = nullptr;
 
-// UnityEngine.SceneManagement.SceneManager.Internal_SceneLoaded(Scene, LoadSceneMode).
-// Scene is a struct wrapping one int handle, so by value it's just an int32.
+// SceneManager.Internal_SceneLoaded(Scene, LoadSceneMode). Scene is just an
+// int handle in a struct, so it comes through as an int32
 void hk_scene_loaded(int32_t handle, int32_t mode, const void* method) {
-    // game's own sceneLoaded listeners first. if the game resets settings on
-    // scene load (likely, given how it ignores everything else), we want to
-    // run *after* that so our values are the ones that stick.
+    // run the game's listeners first. if it resets stuff on scene load we
+    // want to go after it, so our settings win
     g_orig_scene_loaded(handle, mode, method);
 
     std::string name = g_scene_get_name ? il2cpp_to_utf8(g_scene_get_name(handle)) : std::string();
     int idx = g_scene_get_build_index ? g_scene_get_build_index(handle) : -1;
     LZ_INFO("loader", "scene loaded: '%s' (build index %d, mode %d)", name.c_str(), idx, mode);
 
-    // index loop, a callback may register more callbacks
+    // index loop on purpose, callbacks can add callbacks
     for (size_t i = 0; i < g_scene_cbs.size(); ++i) {
         auto cb = g_scene_cbs[i];
         if (cb.dead) continue;
@@ -523,8 +518,7 @@ void install_scene_hook() {
         g_il2cpp.resolve_icall("UnityEngine.SceneManagement.Scene::GetNameInternal"));
     g_scene_get_build_index = reinterpret_cast<int32_t (*)(int32_t)>(
         g_il2cpp.resolve_icall("UnityEngine.SceneManagement.Scene::GetBuildIndexInternal"));
-    // icalls get registered by the engine during startup; if they aren't
-    // there yet we just log scenes without names, no big deal
+    // if these icalls aren't registered yet, scenes just log without names
     if (!g_scene_get_name) LZ_DEBUG("loader", "Scene::GetNameInternal icall not available yet");
 
     if (api_hook_create(&g_loader_owner, target, reinterpret_cast<void*>(&hk_scene_loaded),
@@ -548,7 +542,7 @@ void load_one(const lz::ModManifest& man, lz::BootGuard& guard) {
     auto dll_path = man.dir / fs::u8path(man.dll);
     guard.begin("mod:" + man.id);
 
-    // ALTERED_SEARCH_PATH so a mod's own dependency DLLs next to it get found
+    // so a mod can ship its own dependency dlls next to it
     m->dll = LoadLibraryExW(dll_path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!m->dll) {
         LZ_ERROR(m->tag, "could not load %s (Win32 error %lu)", man.dll.c_str(), GetLastError());
@@ -568,9 +562,9 @@ void load_one(const lz::ModManifest& man, lz::BootGuard& guard) {
     int rc = guarded_init(init, m.get(), &g_api, &code);
     guard.end();
     if (code) {
-        // state after an exception mid-init is unknowable, so we pull its
-        // hooks but leave the DLL mapped. unmapping code that might still be
-        // referenced somewhere is how you turn an error into a crash.
+        // who knows what state it's in. pull the hooks but leave the dll
+        // mapped, unloading code that might still be referenced is how a
+        // logged error becomes a crash
         LZ_ERROR(m->tag, "crashed during init (exception 0x%08lX) - disabled for this session", code);
         drop_mod_hooks(m.get());
     } else if (rc != 0) {
@@ -586,9 +580,8 @@ void load_one(const lz::ModManifest& man, lz::BootGuard& guard) {
 }
 
 std::string unity_version() {
-    // we *are* version.dll, so linking version.lib here would make us import
-    // ourselves. go through the forwarding table instead (indices match
-    // kVersionExports in dllmain.cpp).
+    // we ARE version.dll, can't link version.lib. use the forward table
+    // (indices from kVersionExports in dllmain.cpp)
     using SizeW_t = DWORD(WINAPI*)(LPCWSTR, LPDWORD);
     using InfoW_t = BOOL(WINAPI*)(LPCWSTR, DWORD, DWORD, LPVOID);
     using QueryW_t = BOOL(WINAPI*)(LPCVOID, LPCWSTR, LPVOID*, PUINT);
@@ -630,7 +623,7 @@ void start() {
     auto& log = lz::Logger::global();
     log.open(root / "logs" / "lazarus.log");
     {
-        // logs get pasted into public issues; keep the windows username out of them
+        // keep the windows username out of logs people paste on github
         wchar_t prof[MAX_PATH];
         DWORD n = GetEnvironmentVariableW(L"USERPROFILE", prof, MAX_PATH);
         if (n && n < MAX_PATH) {
@@ -778,7 +771,7 @@ int guarded_start(DWORD* code) {
 
 void set_proxy_module(HMODULE self) {
     g_proxy = self;
-    // the proxy sits next to the game exe, so its folder is the game folder
+    // we sit next to the exe, so our folder is the game folder
     DWORD n = GetModuleFileNameW(self, g_game_dir, MAX_PATH);
     if (n && n < MAX_PATH) {
         wchar_t* slash = wcsrchr(g_game_dir, L'\\');
@@ -787,11 +780,11 @@ void set_proxy_module(HMODULE self) {
 }
 
 void bootstrap_note(const char* msg) {
-    // raw Win32 only - this runs inside DllMain
+    // runs inside DllMain, raw win32 only
     wchar_t path[MAX_PATH + 64];
     if (g_game_dir[0]) {
         swprintf_s(path, L"%s\\Lazarus\\logs", g_game_dir);
-        CreateDirectoryW(path, nullptr);  // Lazarus\ itself exists if we're installed; fail silently otherwise
+        CreateDirectoryW(path, nullptr);
         wcscat_s(path, L"\\bootstrap.log");
         static bool truncated = false;
         HANDLE h = CreateFileW(path, truncated ? FILE_APPEND_DATA : GENERIC_WRITE, FILE_SHARE_READ, nullptr,
@@ -815,7 +808,7 @@ void bootstrap_note(const char* msg) {
 
 void on_il2cpp_ready(HMODULE game_assembly) {
     static bool started = false;
-    if (started) return;  // unity only calls this once, but belt and braces
+    if (started) return;  // unity only calls it once. probably
     started = true;
     g_ga = game_assembly;
     DWORD code = 0;

@@ -1,25 +1,21 @@
 /*
  * Project Lazarus mod API.
  *
- * Plain C on purpose: mods can be built with any compiler/CRT and we never
- * pass C++ objects across the DLL boundary. Include this header and nothing
- * else from the loader.
+ * Plain C, so build your mod with whatever compiler/CRT you like. This is the
+ * only header you need.
  *
- * A mod is a DLL that exports:
+ * Export these from your DLL:
  *
- *   int  lazarus_mod_init(LazarusMod* self, const LazarusApi* api);   // required, return 0 on success
+ *   int  lazarus_mod_init(LazarusMod* self, const LazarusApi* api);   // required, 0 = ok
  *   void lazarus_mod_shutdown(LazarusMod* self);                      // optional
  *
- * Threading: init, shutdown and every event callback run on the game's main
- * thread. Don't block in them.
+ * All of it runs on the game's main thread, so don't block.
  *
- * Lifetime: `api` and `self` stay valid until lazarus_mod_shutdown returns.
- * Hooks and event registrations made by a mod are removed by the loader if the
- * mod fails to init, and on shutdown, so a mod doesn't have to track them.
+ * `api` and `self` are good until shutdown returns. Hooks and callbacks you
+ * register get cleaned up for you, both when init fails and at shutdown.
  *
- * Compatibility rule for future versions: fields are only ever appended to
- * LazarusApi. Check api->struct_size before touching anything newer than
- * what your mod was built against.
+ * New fields only ever get added to the end of LazarusApi. If you use one
+ * that's newer than what you built against, check api->struct_size first.
  */
 #ifndef LAZARUS_API_H
 #define LAZARUS_API_H

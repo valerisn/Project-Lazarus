@@ -1,6 +1,5 @@
-# The proxy has to be called version.dll for the game to pick it up, but the
-# CMake target is named differently so nothing accidentally links against our
-# import lib thinking it's the Windows one.
+# output has to be version.dll, but the target isn't called that so nothing
+# links our import lib by accident thinking it's the windows one
 add_library(lazarus_proxy SHARED
   dllmain.cpp
   iat.cpp
