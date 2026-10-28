@@ -42,6 +42,10 @@ $script:KnownBuilds = @{ '1b579b75b1486c0e' = 'Steam build 12839205 (December 20
 $script:ManifestName = 'install-manifest.txt'
 # user-editable files: never overwritten on reinstall
 $script:UserFiles = @('Lazarus\lazarus.ini', 'Lazarus\mods\*\config.ini')
+# folders under Lazarus\ that only the loader writes to (cleared on uninstall)
+$script:RuntimeDirs = @('logs', 'state', 'backup')
+# files our mods write into their own folder at runtime (key-rebind's action dumps)
+$script:GeneratedFiles = @('actions-*.json')
 
 class LazarusError : System.Exception {
     LazarusError([string]$m) : base($m) {}
@@ -369,25 +373,54 @@ function Invoke-Uninstall([string]$dir) {
         }
     }
 
+    # Only what we put there, plus what Lazarus itself writes at runtime.
+    # This used to be Remove-Item Lazarus -Recurse, which also took out any
+    # mod the user had installed on their own (security review #2).
     $lz = Join-Path $dir 'Lazarus'
-    if ($KeepSettings) {
-        $keep = Join-Path ([System.IO.Path]::GetTempPath()) ("lazarus-keep-" + [guid]::NewGuid())
-        foreach ($pat in $script:UserFiles) {
-            Get-ChildItem -Path (Join-Path $dir $pat) -File -ErrorAction SilentlyContinue | ForEach-Object {
-                $rel = $_.FullName.Substring($dir.TrimEnd('\').Length + 1)
-                $dst = Join-Path $keep $rel
-                New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
-                Copy-Item -LiteralPath $_.FullName -Destination $dst
-            }
+    foreach ($rel in @($m.files.Keys)) {
+        if ($rel -eq 'version.dll') { continue }
+        if ($KeepSettings -and (Test-IsUserFile $rel)) { continue }
+        $p = Join-Path $dir $rel
+        if (Test-Path -LiteralPath $p -PathType Leaf) { Remove-Item -LiteralPath $p -Force }
+    }
+    # runtime output: flat folders, so no recursive delete needed (or wanted)
+    foreach ($d in $script:RuntimeDirs) {
+        $p = Join-Path $lz $d
+        if (Test-Path -LiteralPath $p -PathType Container) {
+            Get-ChildItem -LiteralPath $p -File -Force | Remove-Item -Force
         }
-        Remove-Item -LiteralPath $lz -Recurse -Force
-        if (Test-Path -LiteralPath $keep) {
-            Copy-Item -Path (Join-Path $keep '*') -Destination $dir -Recurse -Force
-            Remove-Item -LiteralPath $keep -Recurse -Force
+    }
+    # files our own mods generate next to themselves (only in folders we installed)
+    $ourModDirs = @($m.files.Keys | Where-Object { $_ -like 'Lazarus\mods\*\*' } |
+        ForEach-Object { Split-Path (Join-Path $dir $_) } | Select-Object -Unique)
+    foreach ($md in $ourModDirs) {
+        foreach ($pat in $script:GeneratedFiles) {
+            Get-ChildItem -LiteralPath $md -Filter $pat -File -ErrorAction SilentlyContinue | Remove-Item -Force
         }
-        Write-Step 'Removed Lazarus (kept your settings files)'
+    }
+    $mf = Get-ManifestPath $dir
+    if (Test-Path -LiteralPath $mf) { Remove-Item -LiteralPath $mf -Force }
+
+    # drop folders that ended up empty, deepest first. a folder with anything
+    # left in it (someone else's mod) stays.
+    if (Test-Path -LiteralPath $lz) {
+        $dirs = @(Get-ChildItem -LiteralPath $lz -Directory -Recurse -Force | Sort-Object { $_.FullName.Length } -Descending)
+        foreach ($d in ($dirs + (Get-Item -LiteralPath $lz))) {
+            if (-not (Get-ChildItem -LiteralPath $d.FullName -Force)) { Remove-Item -LiteralPath $d.FullName -Force }
+        }
+    }
+
+    if (Test-Path -LiteralPath $lz) {
+        $left = @(Get-ChildItem -LiteralPath $lz -Recurse -File -Force |
+            ForEach-Object { $_.FullName.Substring($lz.Length + 1) })
+        if ($KeepSettings) { Write-Step 'Removed Lazarus (kept your settings files)' }
+        else { Write-Step 'Removed Lazarus' }
+        if ($left.Count) {
+            Write-Step "Left in place, not installed by Lazarus or kept on request ($($left.Count) file(s)):"
+            $left | Select-Object -First 20 | ForEach-Object { Write-Step "  Lazarus\$_" }
+            if ($left.Count -gt 20) { Write-Step "  ... and $($left.Count - 20) more" }
+        }
     } else {
-        Remove-Item -LiteralPath $lz -Recurse -Force
         Write-Step 'Removed the Lazarus folder'
     }
 }

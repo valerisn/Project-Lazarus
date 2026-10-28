@@ -144,6 +144,28 @@ Describe 'Install and uninstall' {
         Test-Path (Join-Path $c.Game 'version.dll') | Should Be $false
     }
 
+    It 'keeps mods the user added themselves (security review #2)' {
+        $c = New-Case
+        $SourceDir = $c.Src
+        Invoke-Install $c.Game
+        $theirs = Join-Path $c.Game 'Lazarus\mods\someones-mod'
+        New-Item -ItemType Directory -Force -Path $theirs | Out-Null
+        Set-Content -LiteralPath (Join-Path $theirs 'mod.ini') -Value '[mod]' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $theirs 'cool.dll') -Value 'theirs' -Encoding ASCII
+        # runtime output that should go: logs, crash state, our mod's generated dump
+        Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\logs\lazarus.log') -Value 'log' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\state\quarantine.txt') -Value 'q' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\mods\graphics-settings\actions-Player.json') -Value '{}' -Encoding ASCII
+        Invoke-Uninstall $c.Game
+        Test-Path (Join-Path $theirs 'cool.dll') | Should Be $true
+        Test-Path (Join-Path $theirs 'mod.ini') | Should Be $true
+        Test-Path (Join-Path $c.Game 'Lazarus\mods\graphics-settings') | Should Be $false
+        Test-Path (Join-Path $c.Game 'Lazarus\logs') | Should Be $false
+        Test-Path (Join-Path $c.Game 'Lazarus\state') | Should Be $false
+        Test-Path (Get-ManifestPath $c.Game) | Should Be $false
+        Test-Path (Join-Path $c.Game 'version.dll') | Should Be $false
+    }
+
     It 'uninstall on a clean folder explains itself' {
         $c = New-Case
         { Invoke-Uninstall $c.Game } | Should Throw 'does not appear to be installed'
