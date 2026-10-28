@@ -1,12 +1,9 @@
-// Key Rebind (issue #3): the PC version has no rebinding at all.
+// #3, the PC version has no rebinding at all.
 //
-// The game uses Unity's Input System, and the runtime override API survived
-// IL2CPP stripping: InputActionRebindingExtensions.ApplyBindingOverride(
-// action, newPath, group, path). So: find the game's InputActionAssets, dump
-// them to JSON so people can see the real action names and paths, then apply
-// [bindings] from config.ini. Overrides live in memory only, the game's own
-// files are never touched. Re-applied on every scene load because new
-// scenes can bring their own action assets.
+// luckily ApplyBindingOverride(action, newPath, group, path) survived
+// stripping. dump the game's input actions to json so people know the real
+// names, then apply [bindings]. overrides are in memory only. redone on scene
+// load because new scenes can bring their own action assets
 
 #include <windows.h>
 
@@ -29,8 +26,8 @@ const LazarusApi* api = nullptr;
 LazarusMod* self = nullptr;
 
 std::vector<rebind::Rebind> g_rebinds;
-std::set<std::string> g_dumped;    // asset names already written to json
-std::set<size_t> g_reported;       // rebinds we've logged success/failure for
+std::set<std::string> g_dumped;
+std::set<size_t> g_reported;       // so we only log each one once
 
 #define LOG(lvl, ...) api->log(self, lvl, __VA_ARGS__)
 
@@ -54,7 +51,7 @@ void load_config() {
     }
 }
 
-// one file per asset: the game has at least a player map and probably UI ones
+// one json per asset
 int dump_assets(const std::vector<il2::Obj*>& assets, bool force, std::string* where) {
     int written = 0;
     il2::Method* to_json = nullptr;
@@ -138,7 +135,7 @@ void apply_all(bool verbose, LazarusPrintFn print = nullptr, void* ctx = nullptr
 }
 
 void on_scene(void*, const char*, int, int mode) {
-    if (mode != 1) apply_all(false);  // additive loads rarely bring input assets, skip them
+    if (mode != 1) apply_all(false);  // additive loads don't bring new input assets
 }
 
 void cmd_apply(void*, int, const char**, LazarusPrintFn print, void* ctx) {

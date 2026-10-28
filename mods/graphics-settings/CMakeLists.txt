@@ -1,8 +1,7 @@
 add_library(graphics_settings SHARED graphics_settings.cpp settings.cpp)
 target_include_directories(graphics_settings PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
-# config.ini is generated from kDefaultConfig so the shipped file and the
-# parser's idea of "default" can't drift apart
+# config.ini comes from kDefaultConfig so the file and the parser can't disagree
 add_executable(gfx_write_default_config write_default_config.cpp settings.cpp)
 
 set(GFX_OUT ${CMAKE_BINARY_DIR}/dist/Lazarus/mods/graphics-settings)

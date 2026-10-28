@@ -1,13 +1,11 @@
-// Mouse Sensitivity (issue #2): "impossible to aim unless your DPI is at 10".
+// #2, "impossible to aim unless your DPI is at 10".
 //
-// All camera look input in this game goes through Cinemachine's
-// CinemachineInputProvider.GetAxisValue(axis) (axis 0 = X, 1 = Y, 2 = Z).
-// Scaling X/Y there is upstream of the game's own sensitivity slider, so the
-// slider still works, just on top of our scale.
+// all camera look input goes through CinemachineInputProvider.GetAxisValue
+// (0 = x, 1 = y, 2 = z). we scale x/y there, the in-game slider still applies
+// on top.
 //
-// Mouse vs gamepad: the game itself calls PlayerInputsReader.OnKeyboardActive
-// (bool) when you switch devices, so we hook that to know which scale to use.
-// Gamepad players complained less, so the two scales are separate.
+// separate mouse/pad scales since pad players mostly didn't complain. the game
+// calls PlayerInputsReader.OnKeyboardActive when you switch, so we hook that
 
 #include <windows.h>
 
@@ -23,11 +21,11 @@ const LazarusApi* api = nullptr;
 LazarusMod* self = nullptr;
 
 float g_mouse_scale = 1.0f, g_pad_scale = 1.0f;
-float g_y_ratio = 1.0f;          // extra multiplier on vertical only
-volatile bool g_kbm = true;      // until the game tells us otherwise
+float g_y_ratio = 1.0f;
+volatile bool g_kbm = true;      // until the game says otherwise
 bool g_seen_device_event = false;
 
-// calibration stats, logged every 10s at debug when there was look input
+// for calibrating, logged at debug every 10s
 float g_peak_raw = 0, g_peak_scaled = 0;
 ULONGLONG g_last_stats = 0;
 

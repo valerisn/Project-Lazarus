@@ -37,7 +37,7 @@ bool to_double(const std::string& s, double& out) {
     return true;
 }
 
-// reads an int in [lo, hi] or one of the `extra` sentinel values; empty = default
+// [lo, hi] or one of the `extra` values (like -1). blank = leave the default
 void read_int(const Getter& get, const char* sec, const char* key, int& field, long lo, long hi,
               std::vector<std::string>& w, std::initializer_list<long> extra = {}) {
     auto raw = get(sec, key);
@@ -122,7 +122,7 @@ Settings parse(const Getter& get, std::vector<std::string>& w) {
     }
     read_int(get, "display", "refresh_rate", s.refresh_rate, 24, 1000, w);
 
-    // below 10fps is never what someone meant, and 0 would freeze unity's frame pacing
+    // nobody wants <10fps, and 0 does weird things to unity's frame pacing
     read_int(get, "performance", "target_fps", s.target_fps, 10, 1000, w, {-1});
     read_int(get, "performance", "vsync", s.vsync, 0, 4, w);
     if (s.vsync > 0 && s.target_fps != 0)

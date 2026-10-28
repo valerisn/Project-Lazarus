@@ -1,13 +1,9 @@
-// Graphics Settings - first Project Lazarus fix.
+// graphics settings. the game never calls targetFrameRate, vSyncCount,
+// SetResolution or SetQualityLevel itself, so il2cpp stripped the managed
+// wrappers and there's nothing to hook. we just call the engine icalls direct.
 //
-// The game's own C# never calls targetFrameRate / vSyncCount / SetResolution /
-// SetQualityLevel - IL2CPP stripped all of those managed wrappers because
-// nothing referenced them. So there's nothing to hook; we call the engine's
-// native internal calls (icalls) directly instead.
-//
-// Everything is applied on scene load, the first point where the engine is
-// guaranteed to be up. After that we re-check on every scene load and
-// re-apply if something (the game, a quality preset switch) changed it.
+// applied on the first scene load (engine's definitely up by then) and
+// re-checked on later ones in case something reset it
 
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +24,7 @@ bool disabled = false;
 
 #define LOG(lvl, ...) api->log(self, lvl, __VA_ARGS__)
 
-// icall signatures are the managed signature minus the MethodInfo*, as plain C
+// icalls = managed signature without the trailing MethodInfo*
 struct Icalls {
     void (*set_fps)(int32_t) = nullptr;
     int32_t (*get_fps)() = nullptr;
@@ -59,7 +55,7 @@ bool icall(T& fn, const char* name, bool needed) {
 }
 
 void resolve_all() {
-    // only complain about the ones the user actually configured
+    // only whine about the ones that are actually configured
     icall(ic.set_fps, "UnityEngine.Application::set_targetFrameRate", cfg.target_fps != 0);
     icall(ic.get_fps, "UnityEngine.Application::get_targetFrameRate", false);
     icall(ic.set_vsync, "UnityEngine.QualitySettings::set_vSyncCount", cfg.vsync >= 0);
@@ -85,7 +81,7 @@ std::string to_utf8(void* str) {
     std::string out;
     const wchar_t* w = string_chars(str);
     for (int32_t i = 0, n = string_length(str); i < n; ++i)
-        out += (w[i] < 128) ? (char)w[i] : '?';  // quality level names are ascii, good enough for a log line
+        out += (w[i] < 128) ? (char)w[i] : '?';  // names are ascii, it's a log line
     return out;
 }
 
@@ -94,7 +90,7 @@ int log_quality_levels() {
     void* arr = ic.get_quality_names();
     if (!arr) return -1;
     uint32_t n = array_length(arr);
-    // Il2CppArray: object header (16) + bounds ptr (8) + max_length (8), then elements
+    // Il2CppArray: 16 byte header, bounds ptr, max_length, then the items
     auto items = reinterpret_cast<void**>(reinterpret_cast<char*>(arr) + 32);
     std::string list;
     for (uint32_t i = 0; i < n; ++i) {
@@ -107,8 +103,8 @@ int log_quality_levels() {
     return (int)n;
 }
 
-// set -> read back -> complain if it didn't stick. on later scenes, also
-// notice if something changed it behind our back.
+// set it, read it back, complain if it didn't take. on later scenes this is
+// also how we catch the game changing it behind our back
 template <typename T>
 void apply(const char* what, T want, T (*get)(), void (*set)(T), bool first) {
     if (!set) return;
@@ -141,8 +137,8 @@ void apply_display() {
         LOG(LAZARUS_LOG_WARN, "couldn't work out the current resolution, leaving display settings alone");
         return;
     }
-    // Screen.SetResolution is applied by unity at the end of the frame, so a
-    // read-back here would still show the old values. log intent only.
+    // unity applies SetResolution at end of frame, reading it back now would
+    // just show the old value
     ic.set_resolution(w, h, mode, cfg.refresh_rate);
     LOG(LAZARUS_LOG_INFO, "display: %dx%d %s%s", w, h, gfx::window_mode_name(mode),
         cfg.refresh_rate ? (" @" + std::to_string(cfg.refresh_rate) + "Hz").c_str() : "");
@@ -157,8 +153,7 @@ void apply_all(bool first) {
         }
         apply_display();
     }
-    // quality level first: switching presets resets vsync/lod/aniso to that
-    // preset's values, so everything else has to go on top of it
+    // quality level has to go first, switching presets resets vsync/lod/aniso
     if (cfg.quality_level >= 0 && ic.set_quality) {
         int cur = ic.get_quality ? ic.get_quality() : -1;
         if (cur != cfg.quality_level) {
@@ -175,11 +170,10 @@ void apply_all(bool first) {
     if (cfg.anisotropic >= 0) apply<int32_t>("anisotropic filtering", cfg.anisotropic, ic.get_aniso, ic.set_aniso, first);
 }
 
-// Watchdog (issue #8). First live run: cap applied at the first scene, yet
-// the first 10s still averaged 368 fps with no drift seen at scene loads -
-// something flips it between scene loads and flips it back before the next
-// one. Prime suspect is the boot video sequence. Checking two getters every
-// 30 frames is basically free, so just keep putting it back and say who/when.
+// watchdog for #8. first real run had the cap set at scene 1 and the first
+// 10s still ran at 368fps, with nothing wrong at the next scene load. so
+// something flips it in between and back. my money's on the boot video.
+// two getters every 30 frames costs nothing, so just keep putting it back
 int g_watch_frames = 0;
 int g_watch_logs = 0;
 
@@ -188,8 +182,8 @@ void watch_one(const char* what, int32_t want, int32_t (*get)(), void (*set)(int
     int32_t cur = get();
     if (cur == want) return;
     set(want);
-    // first few in full, then every 50th, so a game that fights us every
-    // frame doesn't turn lazarus.log into a novel
+    // first few, then every 50th. if the game fights us every frame the log
+    // shouldn't be 90% this
     if (g_watch_logs < 5 || g_watch_logs % 50 == 0)
         LOG(LAZARUS_LOG_WARN, "watchdog: %s was %d, put back to %d (correction #%d)", what, cur, want, g_watch_logs + 1);
     ++g_watch_logs;
@@ -210,8 +204,7 @@ void on_scene(void*, const char* name, int, int mode) {
         apply_all(true);
         applied_once = true;
     } else if (cfg.reapply_each_scene && mode == 0) {
-        // additive loads don't swap out the world, the game has no reason
-        // to touch settings there. skipping them saves a few calls per load.
+        // additive loads don't replace the world, no reason to recheck
         apply_all(false);
     }
 }
@@ -221,7 +214,7 @@ void on_scene(void*, const char* name, int, int mode) {
 extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const LazarusApi* a) {
     api = a;
     self = m;
-    // built against the v2 header but only v1 fields are required
+    // v1 loaders are fine, we only need the v1 fields
     if (a->struct_size < offsetof(LazarusApi, on_update)) return 1;
 
     std::vector<std::string> warnings;
@@ -239,10 +232,9 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const Lazar
     if (!anything) {
         LOG(LAZARUS_LOG_INFO, "config.ini has nothing set, the game's defaults are left alone. Edit %s\\config.ini.",
             api->mod_dir(self));
-        return 0;  // loaded but idle - not an error
+        return 0;  // nothing to do isn't an error
     }
-    // v2 loaders give us a frame tick for the watchdog; on v1 we still work,
-    // just with scene-load re-applies only
+    // no frame tick on v1, then it's just the scene-load re-applies
     if (api->api_version >= 2 && (cfg.target_fps != 0 || cfg.vsync >= 0) &&
         api->on_update(self, &on_update, nullptr) != LAZARUS_OK)
         LOG(LAZARUS_LOG_WARN, "no frame tick, frame cap watchdog off");

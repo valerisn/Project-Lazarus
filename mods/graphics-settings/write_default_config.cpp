@@ -1,4 +1,4 @@
-// build helper: writes kDefaultConfig to argv[1]
+// build step: writes kDefaultConfig out as config.ini
 #include <cstdio>
 
 #include "settings.h"

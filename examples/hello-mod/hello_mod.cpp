@@ -1,5 +1,4 @@
-// Smallest useful Lazarus mod: logs every scene load and shows how to read
-// a setting and hook a game method. Copy this folder to start a new mod.
+// minimal mod: logs scene loads and reads one setting. copy this folder to start your own
 
 #include "lazarus/lazarus_api.h"
 
@@ -12,7 +11,7 @@ static void on_scene(void*, const char* name, int build_index, int mode) {
                  mode ? "additive" : "single");
 }
 
-// Hooking example, commented out because it changes gameplay:
+// hooking a game method looks like this (left out because it changes gameplay):
 //
 //   static void (*orig_apply)(void* self_obj, const void* method);
 //   static void hk_apply(void* self_obj, const void* method) {
@@ -25,9 +24,8 @@ static void on_scene(void*, const char* name, int build_index, int mode) {
 //                               "CameraSensitivity", "ApplySensitivity", 0);
 //   api->hook_create(self, api->method_pointer(mi), (void*)&hk_apply, (void**)&orig_apply);
 //
-// IL2CPP calling convention: instance methods take the object pointer first,
-// every method takes a trailing const MethodInfo*. Use tools/il2cpp_meta.py
-// to find class/method names and parameter counts.
+// il2cpp: instance methods get `this` first, everything gets a trailing
+// MethodInfo*. tools/il2cpp_meta.py finds names and arg counts
 
 extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const LazarusApi* a) {
     api = a;

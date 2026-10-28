@@ -1,6 +1,5 @@
 #pragma once
-// Config parsing for the graphics-settings mod, kept free of any loader/game
-// dependency so it can be unit tested.
+// config parsing only, no game stuff, so the tests can use it
 
 #include <functional>
 #include <optional>
@@ -14,7 +13,7 @@ enum WindowMode { kLeave = -1, kExclusive = 0, kBorderless = 1, kMaximized = 2, 
 
 struct Settings {
     int window_mode = kLeave;
-    int width = 0;  // 0 = keep whatever the game picked
+    int width = 0;  // 0 = keep what the game picked
     int height = 0;
     int refresh_rate = 0;
 
@@ -31,13 +30,12 @@ struct Settings {
 
 using Getter = std::function<std::optional<std::string>(const char* section, const char* key)>;
 
-// never fails: bad values become "leave alone" with a warning so a typo
-// can't make the game unlaunchable
+// never fails. a bad value just means that setting is left alone
 Settings parse(const Getter& get, std::vector<std::string>& warnings);
 
 const char* window_mode_name(int m);
 
-// the config.ini shipped with the mod, with everything defaulting to "leave alone"
+// the shipped config.ini, everything blank
 extern const char* const kDefaultConfig;
 
 }  // namespace gfx

@@ -1,14 +1,10 @@
-// Skip Intro: gets you past the ~20s of publisher/developer logos.
+// skips the ~20s of logo videos.
 //
-// Boot order on build 12839205 (from the first live log):
-//   Startup -> Splashscreen (logos, ~21s) -> Initialize -> Main Menu
-//
-// LogoScreenUI has nothing to call ("Start/Update", no fields), so instead
-// of poking the splash we do what the splash does at the end: Load() the
-// game's own "Initialize" SceneCollection. If that asset isn't in memory
-// for some reason, fall back to cranking Time.timeScale until the next scene
-// shows up. The fallback won't speed up a video if the logos are one, but
-// it's better than nothing.
+// boot goes Startup -> Splashscreen (logos) -> Initialize -> Main Menu.
+// nothing on the splash is worth calling, so we just do what it does when
+// it's done: Load() the Initialize collection. if that's not in memory, crank
+// timeScale until the next scene. that won't speed up the videos (they are
+// videos, the census confirmed it) but it's a fallback
 
 #include <windows.h>
 
@@ -30,7 +26,7 @@ struct Cfg {
     bool census = true;
 } cfg;
 
-int g_countdown = -1;          // frames until we act, -1 = idle
+int g_countdown = -1;          // -1 = not armed
 bool g_fast_forwarding = false;
 bool g_done = false;
 bool g_timing = false;
@@ -78,13 +74,13 @@ void on_update(void*) {
 
 void on_scene(void*, const char* name, int, int) {
     if (g_timing && _stricmp(name, cfg.splash_scene.c_str()) != 0) {
-        // baseline from the first live run without this mod: 21.3s
+        // vanilla was 21.3s
         g_timing = false;
         LOG(LAZARUS_LOG_INFO, "intro took %.1fs this time (vanilla was ~21.3s on the dev machine)",
             (double)(GetTickCount64() - g_splash_start) / 1000.0);
     }
     if (g_fast_forwarding && _stricmp(name, cfg.splash_scene.c_str()) != 0) {
-        // left the splash one way or another - put time back to normal before anyone notices
+        // off the splash, put time back before anyone notices
         set_timescale(1.0f);
         g_fast_forwarding = false;
         g_done = true;
@@ -95,9 +91,8 @@ void on_scene(void*, const char* name, int, int) {
     g_splash_start = GetTickCount64();
     g_timing = true;
 
-    // first live attempt: Load() fired fine but Initialize then took 9s to
-    // load with the logos still up, so "skipped" looked exactly like "didn't
-    // work". before guessing again, write down what this scene actually is.
+    // first try "didn't work": Load() fired fine, Initialize just took 9s cold
+    // with the logos still up. so log what's actually in this scene
     if (cfg.census) {
         std::string err;
         auto lines = il2::census(err);
@@ -105,8 +100,8 @@ void on_scene(void*, const char* name, int, int) {
         LOG(LAZARUS_LOG_INFO, "census of '%s': %zu distinct component(s)", name, lines.size());
         for (auto& l : lines) LOG(LAZARUS_LOG_INFO, "  %s", l.c_str());
     }
-    // next frame, not this one: calling Load() from inside the scene-loaded
-    // callback of the very scene we're replacing felt like asking for it
+    // next frame. calling Load() from inside the loaded-callback of the scene
+    // we're about to replace felt like asking for trouble
     g_countdown = 1;
 }
 

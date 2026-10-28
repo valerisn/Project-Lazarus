@@ -1,6 +1,6 @@
 add_library(fps_counter SHARED fps_counter.cpp)
 target_include_directories(fps_counter PRIVATE ${PROJECT_SOURCE_DIR}/include)
-# d3d11/d3d12/dxgi are loaded at runtime, only need the headers + uuids
+# the dlls get loaded at runtime, just need the uuids
 target_link_libraries(fps_counter PRIVATE dxguid)
 
 set(FPS_OUT ${CMAKE_BINARY_DIR}/dist/Lazarus/mods/fps-counter)

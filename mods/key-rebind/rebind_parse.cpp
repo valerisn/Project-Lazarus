@@ -5,8 +5,7 @@
 namespace rebind {
 
 static bool looks_like_path(const std::string& p) {
-    // Input System control paths always start with a <Layout>, e.g. <Keyboard>/f,
-    // <Mouse>/leftButton, <Gamepad>/buttonSouth
+    // <Layout>/control, like <Keyboard>/f or <Gamepad>/buttonSouth
     auto close = p.find('>');
     return p.size() > 3 && p[0] == '<' && close != std::string::npos && close > 1 && close + 1 < p.size() &&
            p[close + 1] == '/';

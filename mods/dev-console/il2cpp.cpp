@@ -97,7 +97,7 @@ Klass* find_class(const char* full_name, const char* assembly) {
 }
 
 Method* find_method(Klass* k, const char* name, int argc) {
-    // walk the parents ourselves rather than trusting the export to do it
+    // don't trust the export to check base classes
     for (; k; k = class_get_parent(k))
         if (void* m = class_get_method_from_name(k, name, argc)) return m;
     return nullptr;
@@ -128,7 +128,6 @@ std::string to_utf8(Obj* s) {
     std::string out;
     for (int32_t i = 0; i < len; ++i) {
         wchar_t c = w[i];
-        // good enough for asset/class names; real utf-8 encode for the rest
         if (c < 0x80) out += (char)c;
         else if (c < 0x800) { out += (char)(0xC0 | (c >> 6)); out += (char)(0x80 | (c & 0x3F)); }
         else { out += (char)(0xE0 | (c >> 12)); out += (char)(0x80 | ((c >> 6) & 0x3F)); out += (char)(0x80 | (c & 0x3F)); }
@@ -166,7 +165,7 @@ std::string object_name(Obj* o) {
 }
 
 uint32_t array_length(Obj* arr) { return arr ? array_len(arr) : 0; }
-// Il2CppArray: object header (16) + bounds ptr (8) + max_length (8), elements after
+// Il2CppArray: 16 byte header, bounds ptr, max_length, items
 Obj** array_items(Obj* arr) { return reinterpret_cast<Obj**>(static_cast<char*>(arr) + 32); }
 bool unbox_bool(Obj* b) { return b && *static_cast<bool*>(object_unbox(b)); }
 int32_t unbox_int(Obj* b) { return b ? *static_cast<int32_t*>(object_unbox(b)) : 0; }
@@ -215,8 +214,7 @@ std::vector<std::string> census(std::string& err) {
         err = "UnityEngine.Behaviour not found";
         return lines;
     }
-    // ordered by first appearance, counts for repeats. a plain vector scan is
-    // fine, splash/menu scenes have tens of components not thousands
+    // linear scan is fine, these scenes have dozens of components not thousands
     std::vector<std::pair<std::string, int>> seen;
     for (Obj* o : find_in_scenes(behaviour, err)) {
         std::string key = class_name(class_of(o)) + " on '" + object_name(o) + "'";

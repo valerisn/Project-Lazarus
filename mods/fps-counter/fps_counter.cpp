@@ -1,13 +1,10 @@
-// FPS counter. Counts frames at IDXGISwapChain::Present (every D3D11 and
-// D3D12 frame goes through it) and shows them in a tiny click-through box
-// over the game window, plus a periodic line in lazarus.log.
+// fps counter. counts frames at IDXGISwapChain::Present, which every d3d11
+// and d3d12 frame goes through.
 //
-// Why a separate overlay window instead of drawing into the game's frame:
-// drawing in-frame means owning render state for two graphics APIs. A
-// layered topmost window never touches the game's rendering at all, so the
-// worst case is "the box doesn't show", not "the game crashes". Tradeoff:
-// it can't show over exclusive fullscreen (Unity defaults to borderless, so
-// that's usually fine).
+// the box is its own topmost window instead of being drawn into the frame.
+// drawing in-frame means messing with render state for two APIs; a separate
+// window can't break rendering, worst case the box just doesn't show up.
+// downside is no box in exclusive fullscreen. unity defaults to borderless so meh
 
 #include <windows.h>
 #include <d3d11.h>
@@ -28,7 +25,7 @@ LazarusMod* self = nullptr;
 
 std::atomic<uint64_t> g_frames{0};
 std::atomic<bool> g_stop{false};
-std::atomic<int> g_fps_x10{-1};  // what the overlay shows, -1 = no frames yet
+std::atomic<int> g_fps_x10{-1};  // -1 until the first frame
 HANDLE g_thread = nullptr;
 
 struct Cfg {
@@ -47,14 +44,13 @@ Present1_t g_orig_present1 = nullptr;
 void* g_hooked[4] = {};
 int g_hook_count = 0;
 
-// if dxgi ever routes Present1 through the public Present (or vice versa)
-// this stops us counting the same frame twice
+// in case dxgi calls Present1 through Present internally (or the other way
+// round), don't count one frame twice
 thread_local int t_depth = 0;
 
-// QPC timestamp of the most recent counted frame. the first version just
-// counted frames per 0.5s window, which at 45fps is 22 or 23 frames, so the
-// overlay flickered between 44 and 46. dividing by the real time between
-// first and last frame of the window gets rid of that.
+// time of the last counted frame. v1 counted frames per 0.5s window, which
+// at 45fps is 22 or 23 frames, so it bounced between 44 and 46. using the
+// actual time between frames fixes that
 std::atomic<int64_t> g_last_present_qpc{0};
 
 void count_frame() {
@@ -87,7 +83,7 @@ bool already_hooked(void* p) {
 }
 
 void hook_vtable(void** vt, const char* api_name) {
-    // IDXGISwapChain::Present is vtable slot 8, IDXGISwapChain1::Present1 is 22
+    // vtable slots: Present = 8, Present1 = 22
     void* present = vt[8];
     void* present1 = vt[22];
     if (!already_hooked(present) && g_hook_count < 4 &&
@@ -112,11 +108,11 @@ HWND make_dummy_window() {
                            nullptr);
 }
 
-// Throwaway device + swapchain just to read the swapchain vtable. Everything
-// is loaded dynamically so a missing d3d12.dll can't stop the mod loading.
+// throwaway device + swapchain, all we want is the vtable. loaded dynamically
+// so no d3d12.dll doesn't mean no mod
 void hook_d3d11(HWND wnd) {
-    // System32 only: d3d11/d3d12/dxgi aren't KnownDLLs, so a bare name would
-    // check the game folder first (security review #7)
+    // System32 only. none of these are KnownDLLs, a bare name would look in
+    // the game folder first
     HMODULE d3d11 = LoadLibraryExW(L"d3d11.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!d3d11) return;
     auto create = reinterpret_cast<PFN_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN>(
@@ -133,7 +129,7 @@ void hook_d3d11(HWND wnd) {
     ID3D11Device* dev = nullptr;
     ID3D11DeviceContext* ctx = nullptr;
     HRESULT hr = E_FAIL;
-    // hardware first, WARP if there's no usable GPU (CI runners, RDP sessions)
+    // WARP for boxes without a GPU, like CI
     for (auto type : {D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP}) {
         hr = create(nullptr, type, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
         if (SUCCEEDED(hr)) break;
@@ -213,7 +209,7 @@ LRESULT CALLBACK overlay_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         wchar_t text[32];
         if (v < 0) swprintf_s(text, L"-- FPS");
         else swprintf_s(text, L"%d FPS", (v + 5) / 10);
-        // green 55+, yellow 30+, red below. same thresholds everyone uses
+        // green 55+, yellow 30+, red under that
         SetTextColor(dc, v >= 550 ? RGB(80, 255, 80) : v >= 300 ? RGB(255, 220, 60) : RGB(255, 80, 80));
         DrawTextW(dc, text, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         SelectObject(dc, old);
@@ -231,7 +227,7 @@ HWND make_overlay() {
     wc.lpszClassName = L"LazarusFpsOverlay";
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     RegisterClassExW(&wc);
-    // transparent + noactivate: clicks go straight through, focus never moves
+    // clicks go through it and it never steals focus
     HWND w = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                              wc.lpszClassName, L"Lazarus FPS", WS_POPUP, 0, 0, 96, 30, nullptr, nullptr, wc.hInstance,
                              nullptr);
@@ -248,13 +244,12 @@ void place_overlay(HWND ov) {
     const int W = 96, H = 30, M = 8;
     int x = (cfg.corner == 1 || cfg.corner == 3) ? br.x - W - M : tl.x + M;
     int y = (cfg.corner >= 2) ? br.y - H - M : tl.y + M;
-    // only float over the game while it's the active app, otherwise it'd sit on top of everything
+    // hide it when the game isn't in front, or it floats over your browser
     bool show = GetForegroundWindow() == g_game && !IsIconic(g_game);
     SetWindowPos(ov, HWND_TOPMOST, x, y, W, H, SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
 }
 
-// consistent (frame count, time of that frame) pair. the render thread bumps
-// the count and then the time, so re-read until the count didn't move.
+// render thread writes count then time, so retry until the count holds still
 struct Sample {
     uint64_t frames;
     int64_t qpc;
@@ -267,7 +262,6 @@ Sample sample() {
     }
 }
 
-// frames per second between two samples, -1 if there's nothing to measure
 double rate(const Sample& from, const Sample& to, double qpc_freq) {
     if (to.frames <= from.frames || to.qpc <= from.qpc) return -1;
     return (double)(to.frames - from.frames) * qpc_freq / (double)(to.qpc - from.qpc);
@@ -291,7 +285,7 @@ DWORD WINAPI overlay_thread(LPVOID) {
             Sample s = sample();
             double r = rate(last, s, f);
             if (r >= 0) g_fps_x10 = (int)(r * 10.0 + 0.5);
-            else if (g_fps_x10.load() >= 0) g_fps_x10 = 0;  // frames stopped (alt-tabbed / hung)
+            else if (g_fps_x10.load() >= 0) g_fps_x10 = 0;  // no frames = alt-tabbed or hung
             last = s;
             last_tick = now;
         }
@@ -322,8 +316,8 @@ DWORD WINAPI overlay_thread(LPVOID) {
         if (cfg.title && g_fps_x10.load() >= 0) {
             wchar_t t[320];
             swprintf_s(t, L"%s  |  %d FPS", g_orig_title, (g_fps_x10.load() + 5) / 10);
-            // timeout version: plain SetWindowText blocks forever if the
-            // game's main thread is stuck, and then so would shutdown
+            // SetWindowText hangs forever if the game's main thread is stuck,
+            // and then shutdown would too
             DWORD_PTR r;
             SendMessageTimeoutW(g_game, WM_SETTEXT, 0, (LPARAM)t, SMTO_ABORTIFHUNG, 200, &r);
         }

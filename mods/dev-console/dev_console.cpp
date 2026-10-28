@@ -1,13 +1,11 @@
-// Dev console: F6 opens a text console over the game.
+// F6 console.
 //
-// Threads: the window lives on its own UI thread (so typing never stalls the
-// game and the game never stalls typing). Commands get shipped to the main
-// thread with run_on_main and executed there; output comes back through a
-// locked queue + PostMessage. Every output line also goes to lazarus.log,
-// which means a player can paste the log and we see exactly what they saw.
+// the window has its own thread so a slow frame never eats keystrokes.
+// commands go to the main thread via run_on_main, output comes back through
+// a locked queue + PostMessage. everything printed also goes to lazarus.log,
+// so a pasted log shows exactly what the player saw.
 //
-// Same overlay caveat as the fps counter: it's a separate topmost window, so
-// it doesn't show over exclusive fullscreen.
+// separate topmost window like the fps box, so no exclusive fullscreen either
 
 #include <windows.h>
 
@@ -60,7 +58,7 @@ void print_line(void*, const char* text) {
     {
         std::lock_guard<std::mutex> g(g_out_mu);
         g_pending.emplace_back(text);
-        if (g_pending.size() > 2000) g_pending.pop_front();  // nobody's reading, don't grow forever
+        if (g_pending.size() > 2000) g_pending.pop_front();  // console never opened, don't grow forever
     }
     if (g_wnd) PostMessageW(g_wnd, WM_APP_OUTPUT, 0, 0);
 }
@@ -80,7 +78,7 @@ void flush_output() {
         w += part + L"\r\n";
     }
     int len = GetWindowTextLengthW(g_out);
-    if (len > 60000) {  // edit controls get sluggish past this, drop the oldest third
+    if (len > 60000) {  // edit controls crawl past this, chop the oldest bit
         SendMessageW(g_out, EM_SETSEL, 0, 20000);
         SendMessageW(g_out, EM_REPLACESEL, FALSE, (LPARAM)L"");
         len = GetWindowTextLengthW(g_out);
@@ -101,13 +99,12 @@ void run_line_task(void* p) {
 int32_t g_saved_lock = -1;
 bool g_saved_visible = true;
 int g_saved_run_bg = -1;
-HANDLE g_prepared = nullptr;  // signalled once the open task ran on the main thread
+HANDLE g_prepared = nullptr;  // set when focus_task has run
 
-// Runs on the main thread around opening/closing the console.
-// runInBackground matters: the console takes keyboard focus, and with it off
-// Unity stops ticking the moment the game window loses focus - so commands
-// would sit in the queue until you closed the console. has to be flipped
-// *before* focus moves, hence the event the UI thread waits on.
+// main thread, around open/close. runInBackground is the important bit: the
+// console takes focus, and with it off unity stops ticking the moment the
+// game loses focus, so your commands would just sit there until you closed
+// the console. has to happen before focus moves, hence the event
 void focus_task(void* p) {
     bool opening = p != nullptr;
     auto get_bg = reinterpret_cast<bool (*)()>(api->resolve_icall("UnityEngine.Application::get_runInBackground"));
@@ -148,7 +145,7 @@ void submit(const std::wstring& wline) {
     if (g_history.empty() || g_history.back() != line) g_history.push_back(line);
     g_hist_pos = (int)g_history.size();
 
-    // "clear" is a UI thing, no point bouncing it through the main thread
+    // clear is ui only, don't bother the main thread
     if (line == "clear" || line == "cls") {
         SetWindowTextW(g_out, L"");
         return;
@@ -173,7 +170,7 @@ BOOL CALLBACK find_game(HWND w, LPARAM out) {
 
 void force_foreground(HWND w) {
     if (SetForegroundWindow(w)) return;
-    // the usual dance when Windows refuses: borrow the input queue of whoever has focus
+    // windows said no. the usual AttachThreadInput dance
     HWND fg = GetForegroundWindow();
     DWORD fg_tid = GetWindowThreadProcessId(fg, nullptr), me = GetCurrentThreadId();
     AttachThreadInput(me, fg_tid, TRUE);
@@ -185,7 +182,7 @@ void open_console() {
     if (!g_game) return;
     ResetEvent(g_prepared);
     if (api->run_on_main(self, &focus_task, (void*)1) == LAZARUS_OK)
-        WaitForSingleObject(g_prepared, 500);  // a frame or two; if the game is hung, open anyway
+        WaitForSingleObject(g_prepared, 500);  // if the game's hung, open anyway
     RECT cr;
     GetClientRect(g_game, &cr);
     POINT tl{0, 0};
@@ -236,7 +233,7 @@ LRESULT CALLBACK input_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
     }
-    // swallow the chars for enter/escape/tab so the edit control doesn't beep
+    // or the edit control beeps at you
     if (msg == WM_CHAR && (wp == L'\r' || wp == 27 || wp == L'\t')) return 0;
     return CallWindowProcW(g_in_proc, w, msg, wp, lp);
 }
@@ -260,7 +257,7 @@ LRESULT CALLBACK wnd_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             flush_output();
             return 0;
         case WM_ACTIVATE:
-            // clicked back into the game or alt-tabbed away: get out of the way
+            // clicked the game or alt-tabbed, get out of the way
             if (LOWORD(wp) == WA_INACTIVE && g_open) close_console(false);
             return 0;
         case WM_CLOSE:
@@ -315,8 +312,8 @@ DWORD WINAPI ui_thread(LPVOID) {
             g_game = nullptr;
             EnumWindows(find_game, (LPARAM)&g_game);
         }
-        // polling instead of RegisterHotKey: a registered hotkey would steal
-        // F6 from every other app on the machine while the game runs
+        // polling, not RegisterHotKey - that would steal F6 from every other
+        // app while the game's open
         bool down = (GetAsyncKeyState(cfg.key) & 0x8000) != 0;
         if (down && !was_down) {
             HWND fg = GetForegroundWindow();
@@ -344,7 +341,7 @@ void on_scene(void*, const char* name, int, int) {
 void on_update(void*) {
     if (g_countdown < 0 || --g_countdown > 0) return;
     g_countdown = -1;
-    g_autoexec_done = true;  // once per session, otherwise "load X" on the main menu loops forever
+    g_autoexec_done = true;  // once, or "load X" from the main menu loops forever
     std::string all = cfg.autoexec;
     size_t start = 0;
     while (start <= all.size()) {
@@ -384,8 +381,7 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const Lazar
         a->log(m, LAZARUS_LOG_ERROR, "needs loader API v2");
         return 1;
     }
-    // missing il2cpp exports only cost us the game-poking commands, the
-    // console itself (help, mods, echo, other mods' commands) still works
+    // no il2cpp = no game commands, but help/mods/echo and other mods' stuff still work
     bool il2_ok = il2::init(a);
     if (!il2_ok)
         a->log(m, LAZARUS_LOG_WARN, "GameAssembly.dll is missing %s - level/cheat/inspect commands disabled",

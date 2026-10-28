@@ -1,11 +1,7 @@
 #pragma once
-// Which LucilleCheats methods are too dangerous for the plain `cheat` command.
-//
-// The developers' cheat object can delete or overwrite the player's main
-// save (CallOnDeleteMainSave, CreateNewSave, CallOnCreateMainSave...). One
-// typo away from losing a 20 hour playthrough is not a dev tool, it's a trap,
-// so anything touching saves or deleting things needs `cheat-unsafe`.
-// (security review #4)
+// the cheat object can delete or overwrite your main save (CallOnDeleteMainSave,
+// CreateNewSave...). being one typo away from losing a 20 hour save is not a
+// dev tool, it's a trap. those need cheat-unsafe
 
 #include <string>
 

@@ -1,10 +1,9 @@
-// Console commands. All of these run on the main thread (the loader
-// guarantees it), so poking at il2cpp/Unity is fine here.
+// console commands. the loader runs these on the main thread, so touching
+// il2cpp/unity from here is fine.
 //
-// The interesting bit: the shipped build still contains the developers' own
-// cheat system (Lucille.LucilleCheats - god mode, skip objective, end level,
-// ...) and every level as a SceneCollection asset with a Load() method. Most
-// commands below are just thin doors into those.
+// the devs left their whole cheat system in the release build
+// (Lucille.LucilleCheats) and every level is a SceneCollection with a Load()
+// method, so most of this file just calls into those
 
 #include "commands.h"
 
@@ -35,7 +34,7 @@ std::string lower(std::string s) {
 }
 
 using Handler = std::function<void(const std::vector<std::string>&, const Out&)>;
-std::vector<Handler> g_handlers;  // index travels through the API's user pointer
+std::vector<Handler> g_handlers;  // the index rides in the api's user pointer
 
 void dispatch(void* user, int argc, const char** argv, LazarusPrintFn p, void* c) {
     std::vector<std::string> args(argv, argv + argc);
@@ -69,8 +68,7 @@ il2::Obj* cheats_instance(const Out& out) {
     }
     il2::Obj* inst = il2::static_field(k, "instance");
     if (!inst) {
-        // seen in testing? not yet - first live run will tell us whether the
-        // release build ever spawns the cheats object
+        // no idea yet if the release build ever spawns this. live run will tell
         std::string err;
         auto all = il2::find_all(k, err);
         if (!all.empty()) inst = all[0];
@@ -97,7 +95,7 @@ std::vector<Collection> collections(const Out& out) {
     return list;
 }
 
-// call a zero/one-int-arg method on the cheats object and report a bool getter after
+// call a cheats method (0 or 1 int arg), then print the matching getter if given
 bool cheat_call(const Out& out, const char* method, const char* getter = nullptr, int* int_arg = nullptr) {
     il2::Obj* inst = cheats_instance(out);
     if (!inst) return false;
