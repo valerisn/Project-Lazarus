@@ -18,3 +18,9 @@ add_subdirectory(e2e)
 add_test(NAME installer_tests
   COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command
     "Import-Module Pester -MaximumVersion 4.99; Invoke-Pester -Script '${CMAKE_CURRENT_SOURCE_DIR}/installer/Install-Lazarus.Tests.ps1' -EnableExit")
+
+# python tooling tests, skipped if there's no python on the box
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+  add_test(NAME tools_tests COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_il2cpp_meta.py)
+endif()

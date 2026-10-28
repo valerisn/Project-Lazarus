@@ -42,6 +42,7 @@ METHOD_DEF = struct.Struct("<IiiiiIHHHH")           # 32 bytes
 IMAGE_DEF = struct.Struct("<IiiIiIiIiI")            # 40 bytes
 PARAM_DEF = struct.Struct("<IIi")                   # 12 bytes
 FIELD_DEF = struct.Struct("<Iii")                   # 12 bytes
+NESTED_DEF = struct.Struct("<i")                    # TypeDefinitionIndex
 
 
 class MetadataError(Exception):
@@ -90,11 +91,33 @@ class Metadata:
         self.images = self._table("images", IMAGE_DEF)
         self.params = self._table("parameters", PARAM_DEF)
         self.fields = self._table("fields", FIELD_DEF)
+        # declaringTypeIndex points into GameAssembly's Il2CppType table, which
+        # we can't see from here. the nestedTypes section is plain typedef
+        # indices though, so build outer<-inner from that instead.
+        nested = self._table("nestedTypes", NESTED_DEF)
+        self.outer = {}
+        for ti, t in enumerate(self.types):
+            start, count = t[12], t[20]
+            if start < 0:
+                continue
+            for k in range(start, start + count):
+                if 0 <= k < len(nested):
+                    self.outer[nested[k][0]] = ti
         return self
 
     def type_name(self, ti: int) -> str:
+        """'Ns.Outer/Inner' for nested types, same form as il2cpp_class_from_name wants"""
         t = self.types[ti]
-        ns, name = self.string(t[1]), self.string(t[0])
+        name = self.string(t[0])
+        seen = {ti}
+        cur = ti
+        while cur in self.outer:
+            cur = self.outer[cur]
+            if cur in seen:  # corrupt data shouldn't hang the tool
+                break
+            seen.add(cur)
+            name = f"{self.string(self.types[cur][0])}/{name}"
+        ns = self.string(self.types[cur][1])
         return f"{ns}.{name}" if ns else name
 
     def iter_types(self):
