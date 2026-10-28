@@ -48,4 +48,11 @@ std::vector<std::string> fields_of(Klass* k);
 // UnityEngine.Resources.FindObjectsOfTypeAll(type): assets + scene objects, active or not
 std::vector<Obj*> find_all(Klass* k, std::string& err);
 
+// UnityEngine.Object.FindObjectsOfType(type, includeInactive=true): scene objects only
+std::vector<Obj*> find_in_scenes(Klass* k, std::string& err);
+
+// "Class on 'GameObject'" for every Behaviour in loaded scenes, deduped with counts.
+// that's how we find out what actually drives a scene (timeline? video? script?)
+std::vector<std::string> census(std::string& err);
+
 }  // namespace il2

@@ -190,6 +190,49 @@ std::vector<std::string> fields_of(Klass* k) {
     return out;
 }
 
+std::vector<Obj*> find_in_scenes(Klass* k, std::string& err) {
+    std::vector<Obj*> out;
+    static Method* fot = nullptr;
+    if (!fot) fot = find_method(find_class("UnityEngine.Object", "UnityEngine.CoreModule.dll"), "FindObjectsOfType", 2);
+    if (!fot) {
+        err = "Object.FindObjectsOfType(type, bool) not found";
+        return out;
+    }
+    bool include_inactive = true;
+    void* args[] = {type_object(k), &include_inactive};
+    Obj* arr = invoke(fot, nullptr, args, err);
+    if (!arr) return out;
+    uint32_t n = array_length(arr);
+    Obj** items = array_items(arr);
+    for (uint32_t i = 0; i < n; ++i) out.push_back(items[i]);
+    return out;
+}
+
+std::vector<std::string> census(std::string& err) {
+    std::vector<std::string> lines;
+    Klass* behaviour = find_class("UnityEngine.Behaviour", "UnityEngine.CoreModule.dll");
+    if (!behaviour) {
+        err = "UnityEngine.Behaviour not found";
+        return lines;
+    }
+    // ordered by first appearance, counts for repeats. a plain vector scan is
+    // fine, splash/menu scenes have tens of components not thousands
+    std::vector<std::pair<std::string, int>> seen;
+    for (Obj* o : find_in_scenes(behaviour, err)) {
+        std::string key = class_name(class_of(o)) + " on '" + object_name(o) + "'";
+        bool found = false;
+        for (auto& s : seen)
+            if (s.first == key) {
+                ++s.second;
+                found = true;
+                break;
+            }
+        if (!found) seen.push_back({key, 1});
+    }
+    for (auto& s : seen) lines.push_back(s.second > 1 ? s.first + " x" + std::to_string(s.second) : s.first);
+    return lines;
+}
+
 std::vector<Obj*> find_all(Klass* k, std::string& err) {
     std::vector<Obj*> out;
     static Method* fota = nullptr;

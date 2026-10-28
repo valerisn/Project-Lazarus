@@ -294,6 +294,17 @@ void register_all(const LazarusApi* a, LazarusMod* m) {
         print_lines(out, lines);
         out(std::to_string(lines.size()) + " object(s)");
     });
+    reg("census", "list every component in the loaded scenes [filter]", [](auto& args, auto& out) {
+        std::string err;
+        auto lines = il2::census(err);
+        if (!err.empty()) return out("failed: " + err);
+        std::string f = args.size() > 1 ? lower(args[1]) : "";
+        std::vector<std::string> hits;
+        for (auto& l : lines)
+            if (f.empty() || lower(l).find(f) != std::string::npos) hits.push_back(l);
+        print_lines(out, hits, 400);
+        out(std::to_string(hits.size()) + " distinct component(s)");
+    });
     reg("methods", "list methods of a class: methods <Ns.Class> [filter]", [](auto& args, auto& out) {
         if (args.size() < 2) return out("usage: methods <Ns.Class> [filter]");
         il2::Klass* k = il2::find_class(args[1].c_str());
