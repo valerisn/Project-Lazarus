@@ -9,6 +9,8 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace lz {
 
@@ -33,6 +35,13 @@ public:
     // extra sink, used by tests and by the optional debug console
     void set_sink(std::function<void(const std::string&)> sink) { sink_ = std::move(sink); }
 
+    // replace `needle` (case-insensitive) with `replacement` in every line.
+    // people paste lazarus.log into public issues, and a game under
+    // C:\Users\<name>\ puts their name in it (security review #5).
+    // call during startup, before other threads log.
+    void add_redaction(const std::string& needle, const std::string& replacement);
+    std::string redact(std::string_view msg) const;
+
     static Logger& global();
 
 private:
@@ -40,6 +49,7 @@ private:
     FILE* f_ = nullptr;
     LogLevel level_ = LogLevel::Info;
     std::function<void(const std::string&)> sink_;
+    std::vector<std::pair<std::string, std::string>> redactions_;  // lowercase needle -> replacement
 };
 
 // timestamp + level + tag + message, no newline. split out so tests can poke it.

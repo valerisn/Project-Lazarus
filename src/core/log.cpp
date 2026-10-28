@@ -79,9 +79,38 @@ void Logger::close() {
     }
 }
 
+void Logger::add_redaction(const std::string& needle, const std::string& replacement) {
+    // too-short needles would shred normal text ("C:" etc), not worth it
+    if (needle.size() < 4) return;
+    redactions_.push_back({to_lower(needle), replacement});
+}
+
+std::string Logger::redact(std::string_view msg) const {
+    std::string out(msg);
+    for (auto& r : redactions_) {
+        // lowercase copy just for searching, positions line up 1:1 for ascii
+        // and profile paths are what we care about here
+        std::string low = to_lower(out);
+        size_t pos = 0;
+        std::string rebuilt;
+        size_t last = 0;
+        while ((pos = low.find(r.first, pos)) != std::string::npos) {
+            rebuilt.append(out, last, pos - last);
+            rebuilt += r.second;
+            pos += r.first.size();
+            last = pos;
+        }
+        if (last) {
+            rebuilt.append(out, last, std::string::npos);
+            out.swap(rebuilt);
+        }
+    }
+    return out;
+}
+
 void Logger::write(LogLevel l, std::string_view tag, std::string_view msg) {
     if (!enabled(l)) return;
-    auto line = format_line(l, tag, msg);
+    auto line = redactions_.empty() ? format_line(l, tag, msg) : format_line(l, tag, redact(msg));
     std::lock_guard<std::mutex> g(mu_);
     if (f_) {
         std::fwrite(line.data(), 1, line.size(), f_);

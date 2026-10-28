@@ -629,6 +629,19 @@ void start() {
     auto root = lazarus_dir();
     auto& log = lz::Logger::global();
     log.open(root / "logs" / "lazarus.log");
+    {
+        // logs get pasted into public issues; keep the windows username out of them
+        wchar_t prof[MAX_PATH];
+        DWORD n = GetEnvironmentVariableW(L"USERPROFILE", prof, MAX_PATH);
+        if (n && n < MAX_PATH) {
+            std::string p = fs::path(prof).u8string();
+            log.add_redaction(p, "%USERPROFILE%");
+            std::string fwd = p;
+            for (auto& c : fwd)
+                if (c == '\\') c = '/';
+            log.add_redaction(fwd, "%USERPROFILE%");
+        }
+    }
 
     auto cfg = lz::load_config(root / "lazarus.ini");
     log.set_level(cfg.log_level);

@@ -347,6 +347,20 @@ int wmain() {
         dump_on_fail(run);
     });
 
+    scenario("user profile path is redacted from lazarus.log (security review #5)", [] {
+        reset(false);
+        configure(kEnabled, "normal");
+        // pretend the game lives under the user's profile, like a default Steam library would
+        wchar_t old[MAX_PATH] = {};
+        DWORD had = GetEnvironmentVariableW(L"USERPROFILE", old, MAX_PATH);
+        SetEnvironmentVariableW(L"USERPROFILE", g_stage.parent_path().c_str());
+        auto run = launch();
+        SetEnvironmentVariableW(L"USERPROFILE", had ? old : nullptr);
+        expect(run.has("game dir: %USERPROFILE%\\e2e_stage"), "game dir line redacted");
+        expect(!run.has(g_stage.parent_path().u8string()), "raw profile path never appears");
+        dump_on_fail(run);
+    });
+
     scenario("missing lazarus.ini: defaults, nothing loaded", [] {
         reset(false);
         configure(kEnabled, "normal");
