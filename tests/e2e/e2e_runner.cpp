@@ -327,6 +327,26 @@ int wmain() {
         dump_on_fail(run);
     });
 
+    scenario("dev-console: build pin override, autoexec routes commands, output mirrored to log", [] {
+        reset(false);
+        // dev-console is pinned to the real game build; the fake engine isn't it
+        configure("[loader]\nignore_build_check = true\n[mods]\nenabled = dev-console, test-mod\n", "normal");
+        spit(lz() / "mods" / "dev-console" / "config.ini",
+             "[autoexec]\ncommands = echo autoexec says hi; test.echo \"a b\"; mods; nonsense\n"
+             "after_scene = MainMenu\ndelay_frames = 2\n");
+        auto run = launch();
+        expect(run.r("finished") == "1", "game finished");
+        expect(run.has("is not marked compatible with game build"), "pin override warned");
+        expect(run.has("level/cheat/inspect commands disabled"), "degrades without full il2cpp API");
+        expect(run.has("autoexec: 'MainMenu' loaded, running in 2 frames"), "autoexec armed on scene");
+        expect(run.has("[mod:dev-console] autoexec says hi"), "echo output");
+        expect(run.has("[mod:dev-console] echo:a b"), "another mod's command via console");
+        expect(run.has("[mod:dev-console] test-mod v1.0.0  active"), "loader 'mods' builtin");
+        expect(run.has("[mod:dev-console] unknown command 'nonsense'"), "unknown command hint");
+        expect(run.has("startup complete: 2 mod(s) active"), "both mods up");
+        dump_on_fail(run);
+    });
+
     scenario("missing lazarus.ini: defaults, nothing loaded", [] {
         reset(false);
         configure(kEnabled, "normal");

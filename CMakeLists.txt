@@ -22,6 +22,7 @@ add_subdirectory(src/core)
 add_subdirectory(src/proxy)
 add_subdirectory(mods/graphics-settings)
 add_subdirectory(mods/fps-counter)
+add_subdirectory(mods/dev-console)
 add_subdirectory(examples/hello-mod)
 add_subdirectory(tests)
 
@@ -35,4 +36,4 @@ add_custom_target(dist ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}/Lazarus/mods
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/installer ${DIST}
   COMMENT "Assembling build/dist")
-add_dependencies(dist lazarus_proxy graphics_settings fps_counter lazarus_write_default_config)
+add_dependencies(dist lazarus_proxy graphics_settings fps_counter dev_console lazarus_write_default_config)
