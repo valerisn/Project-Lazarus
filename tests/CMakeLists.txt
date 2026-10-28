@@ -7,6 +7,8 @@ add_executable(lazarus_tests
   test_plan.cpp
   test_state.cpp
   test_command.cpp
+  test_rebind_parse.cpp
+  ../mods/key-rebind/rebind_parse.cpp
   test_gfx_settings.cpp
   ../mods/graphics-settings/settings.cpp
 )
