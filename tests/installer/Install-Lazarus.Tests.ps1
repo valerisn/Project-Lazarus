@@ -157,6 +157,39 @@ Describe 'Install and uninstall' {
     }
 }
 
+Describe 'Manifest path validation (security review #3)' {
+    It 'accepts our own paths' {
+        Test-SafeRelPath 'version.dll' | Should Be $true
+        Test-SafeRelPath 'Lazarus\mods\x\x.dll' | Should Be $true
+        Test-SafeRelPath 'Lazarus\backup\version.dll.orig' 'Lazarus\backup' | Should Be $true
+    }
+    It 'rejects anything outside the footprint' {
+        foreach ($bad in @('..\evil.dll', 'Lazarus\..\..\Windows\x', 'C:\Windows\x.dll', '\\server\share\x',
+                           'GameAssembly.dll', 'Lazarus', 'Lazarus\.\x', 'Lazarus\\x', 'D:x.dll', '')) {
+            Test-SafeRelPath $bad | Should Be $false
+        }
+        Test-SafeRelPath 'Lazarus\mods\x.dll' 'Lazarus\backup' | Should Be $false
+    }
+    It 'refuses to uninstall from a tampered manifest and deletes nothing' {
+        $c = New-Case
+        $SourceDir = $c.Src
+        Invoke-Install $c.Game
+        $victim = Join-Path $c.Base 'victim.txt'
+        Set-Content -LiteralPath $victim -Value 'keep me' -Encoding ASCII
+        Add-Content -LiteralPath (Get-ManifestPath $c.Game) -Value 'file=Lazarus\..\..\victim.txt|x'
+        { Invoke-Uninstall $c.Game } | Should Throw 'unsafe path'
+        Test-Path $victim | Should Be $true
+        Test-Path (Join-Path $c.Game 'version.dll') | Should Be $true
+    }
+    It 'refuses a backup path outside Lazarus\backup' {
+        $c = New-Case
+        $SourceDir = $c.Src
+        Invoke-Install $c.Game
+        Add-Content -LiteralPath (Get-ManifestPath $c.Game) -Value 'backup=version.dll|GameAssembly.dll'
+        { Invoke-Uninstall $c.Game } | Should Throw 'unsafe backup'
+    }
+}
+
 Describe 'Interrupted install' {
     It 'can be uninstalled cleanly and reinstalled' {
         $c = New-Case

@@ -219,6 +219,19 @@ function Test-GameDir([string]$dir) {
 
 function Get-ManifestPath([string]$dir) { Join-Path $dir "Lazarus\$($script:ManifestName)" }
 
+# The manifest decides what uninstall deletes and what it copies over
+# version.dll, so a path in it has to stay inside our own footprint: exactly
+# version.dll, or something under Lazarus\. no rooted paths, no drive letters,
+# no ..\ climbing out. (security review #3)
+function Test-SafeRelPath([string]$rel, [string]$under = $null) {
+    if (-not $rel -or [System.IO.Path]::IsPathRooted($rel) -or $rel.Contains(':')) { return $false }
+    foreach ($part in ($rel -split '[\\/]')) {
+        if ($part -eq '..' -or $part -eq '.' -or $part -eq '') { return $false }
+    }
+    if ($under) { return $rel -like "$under\*" }
+    return ($rel -eq 'version.dll') -or ($rel -like 'Lazarus\*')
+}
+
 function Read-Manifest([string]$dir) {
     $p = Get-ManifestPath $dir
     if (-not (Test-Path -LiteralPath $p)) { return $null }
@@ -226,8 +239,18 @@ function Read-Manifest([string]$dir) {
     foreach ($line in Get-Content -LiteralPath $p) {
         if ($line -match '^state=(.*)$') { $m.state = $Matches[1] }
         elseif ($line -match '^version=(.*)$') { $m.version = $Matches[1] }
-        elseif ($line -match '^file=([^|]+)\|(.*)$') { $m.files[$Matches[1]] = $Matches[2] }
-        elseif ($line -match '^backup=([^|]+)\|(.*)$') { $m.backups[$Matches[1]] = $Matches[2] }
+        elseif ($line -match '^file=([^|]+)\|(.*)$') {
+            if (-not (Test-SafeRelPath $Matches[1])) {
+                Fail "The install record lists an unsafe path ('$($Matches[1])'), so it may have been tampered with. Not touching anything. Remove version.dll and the Lazarus folder by hand."
+            }
+            $m.files[$Matches[1]] = $Matches[2]
+        }
+        elseif ($line -match '^backup=([^|]+)\|(.*)$') {
+            if ($Matches[1] -ne 'version.dll' -or -not (Test-SafeRelPath $Matches[2] 'Lazarus\backup')) {
+                Fail "The install record lists an unsafe backup ('$($Matches[1])' -> '$($Matches[2])'). Not touching anything."
+            }
+            $m.backups[$Matches[1]] = $Matches[2]
+        }
     }
     return $m
 }
