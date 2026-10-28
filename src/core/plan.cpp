@@ -34,10 +34,9 @@ std::vector<DiscoveredMod> discover_mods(const std::filesystem::path& mods_dir, 
             m.errors.push_back(err);
         } else {
             m.valid = parse_manifest(ini, d, m.manifest, m.errors, m.warnings);
-            // used to be a warning. security review: with a mismatch allowed, a
-            // folder like "aaa-pack" claiming id = graphics-settings sorted first
-            // and ran *its* dll under the id the user enabled. folder == id makes
-            // the id unique per mods/ dir, and the user can see what they enabled.
+            // this was only a warning once. then a folder called "aaa-pack" with
+            // id = graphics-settings sorted first and got its dll loaded in place
+            // of the real one. folder == id kills that
             if (m.valid && m.manifest.id != to_lower(folder)) {
                 m.errors.push_back("folder name '" + folder + "' must match the mod id '" + m.manifest.id + "'");
                 m.valid = false;
@@ -56,9 +55,8 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
 
     auto skip = [&](const std::string& id, std::string reason) { plan.skipped.push_back({id, std::move(reason)}); };
 
-    // an id claimed by more than one valid mod loads *none* of them. picking
-    // one (we used to take the first by folder order) means the attacker just
-    // has to win the sort.
+    // two mods with one id -> load neither. picking one means whoever wins the
+    // sort wins
     std::map<std::string, int> id_count;
     for (auto& m : mods)
         if (m.valid) ++id_count[m.manifest.id];
@@ -77,8 +75,7 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
                              ") - none of them will load until the duplicates are removed");
             continue;
         }
-        // explicit opt-in is the security model: dropping a DLL into mods/
-        // must never be enough on its own to get it executed
+        // dropping a dll into mods/ must never be enough to get it run
         if (!enabled.count(man.id)) {
             skip(man.id, "not enabled (add it to [mods] enabled in lazarus.ini)");
             continue;
@@ -118,8 +115,7 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
     for (auto& id : cfg.enabled_mods)
         if (!present.count(id)) plan.warnings.push_back("'" + id + "' is enabled in lazarus.ini but no such mod is installed");
 
-    // drop anything whose deps aren't loadable, repeat until nothing changes
-    // since dropping one mod can strand another
+    // keep going until nothing changes, dropping one mod can strand another
     for (bool changed = true; changed;) {
         changed = false;
         for (auto it = candidates.begin(); it != candidates.end();) {
@@ -140,7 +136,7 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
         }
     }
 
-    // topo sort, deps first, otherwise respecting the user's enabled order
+    // deps first, otherwise whatever order the user listed
     enum Mark { None, Visiting, Done };
     std::map<std::string, Mark> mark;
     std::set<std::string> in_cycle;

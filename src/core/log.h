@@ -1,6 +1,6 @@
 #pragma once
-// File logger. One file per session, previous session kept as *.prev.log so
-// "it crashed, here's my log" doesn't get clobbered by the relaunch.
+// one log per session. the previous one gets kept as .prev.log because the
+// first thing people do after a crash is relaunch, which would eat the evidence
 
 #include <cstdarg>
 #include <cstdio>
@@ -21,7 +21,6 @@ bool parse_level(std::string_view s, LogLevel& out);
 
 class Logger {
 public:
-    // rotates <path> -> <stem>.prev.log, then opens fresh. false if it can't open.
     bool open(const std::filesystem::path& path);
     void close();
     void set_level(LogLevel l) { level_ = l; }
@@ -32,13 +31,12 @@ public:
     void writef(LogLevel l, std::string_view tag, const char* fmt, ...);
     void vwritef(LogLevel l, std::string_view tag, const char* fmt, va_list ap);
 
-    // extra sink, used by tests and by the optional debug console
+    // tests hook in here
     void set_sink(std::function<void(const std::string&)> sink) { sink_ = std::move(sink); }
 
-    // replace `needle` (case-insensitive) with `replacement` in every line.
-    // people paste lazarus.log into public issues, and a game under
-    // C:\Users\<name>\ puts their name in it (security review #5).
-    // call during startup, before other threads log.
+    // people paste this log into public issues, and a game living under
+    // C:\Users\<name> puts their name in every path. not thread safe, set it
+    // up before anything else starts logging
     void add_redaction(const std::string& needle, const std::string& replacement);
     std::string redact(std::string_view msg) const;
 
@@ -49,10 +47,10 @@ private:
     FILE* f_ = nullptr;
     LogLevel level_ = LogLevel::Info;
     std::function<void(const std::string&)> sink_;
-    std::vector<std::pair<std::string, std::string>> redactions_;  // lowercase needle -> replacement
+    std::vector<std::pair<std::string, std::string>> redactions_;
 };
 
-// timestamp + level + tag + message, no newline. split out so tests can poke it.
+// split out so the tests can check the format without a file
 std::string format_line(LogLevel l, std::string_view tag, std::string_view msg);
 
 }  // namespace lz

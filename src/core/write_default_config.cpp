@@ -1,4 +1,4 @@
-// build helper: writes the default lazarus.ini (kDefaultConfigText) to argv[1]
+// build step: dumps kDefaultConfigText to argv[1] so the shipped lazarus.ini can't drift from the code
 #include <cstdio>
 
 #include "core/config.h"

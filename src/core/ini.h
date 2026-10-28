@@ -1,7 +1,6 @@
 #pragma once
-// Tiny INI reader. Picked INI over JSON on purpose: players will hand-edit
-// these files in Notepad, and a missing comma in JSON is a worse failure mode
-// than anything INI can do.
+// tiny INI reader. INI and not JSON because people edit these in notepad and
+// JSON dies on one missing comma
 
 #include <filesystem>
 #include <map>
@@ -20,10 +19,10 @@ struct IniError {
 class Ini {
 public:
     static Ini parse(std::string_view text);
-    // false + err when the file can't be read. parse problems go to errors().
+    // false only if the file can't be read. bad lines end up in errors()
     static bool load(const std::filesystem::path& path, Ini& out, std::string& err);
 
-    // section and key lookups are case-insensitive
+    // case-insensitive
     std::optional<std::string> get(std::string_view section, std::string_view key) const;
     std::string get_or(std::string_view section, std::string_view key, std::string_view def) const;
     bool has_section(std::string_view section) const;

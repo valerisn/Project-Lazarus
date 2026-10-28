@@ -1,8 +1,7 @@
 #pragma once
-// Turns "what's in the mods folder" + "what the user enabled" into an ordered
-// list of mods to actually load, and a list of everything skipped with a
-// human readable reason. The reasons end up in the log verbatim, so they're
-// written for players, not for us.
+// works out what actually loads, in what order, and why everything else
+// didn't. the skip reasons go straight into the log, so write them for
+// players not for us
 
 #include <filesystem>
 #include <set>
@@ -15,15 +14,15 @@
 namespace lz {
 
 struct DiscoveredMod {
-    std::string folder;  // directory name, used as id fallback in messages
+    std::string folder;  // for messages when the id itself is broken
     ModManifest manifest;
     bool valid = false;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
 };
 
-// Scans <mods_dir>/*/mod.ini. Folders without mod.ini are ignored with a
-// warning. Sorted by folder name so results don't depend on filesystem order.
+// sorted by folder name, directory_iterator order isn't guaranteed and I don't
+// want load order changing between machines
 std::vector<DiscoveredMod> discover_mods(const std::filesystem::path& mods_dir, std::vector<std::string>& warnings);
 
 struct SkippedMod {
@@ -39,7 +38,7 @@ struct LoadPlan {
 
 struct PlanInput {
     int loader_api_version = 1;
-    std::string build_fingerprint;  // empty = unknown (couldn't hash GameAssembly)
+    std::string build_fingerprint;  // "" if we couldn't hash GameAssembly
     std::set<std::string> quarantined;
 };
 

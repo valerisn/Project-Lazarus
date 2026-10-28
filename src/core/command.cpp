@@ -21,7 +21,7 @@ std::vector<std::string> tokenize(std::string_view line) {
             }
         } else if (c == '"') {
             in_quotes = true;
-            have = true;  // "" is a real (empty) argument
+            have = true;  // so "" still counts as an argument
         } else if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
             if (have) {
                 out.push_back(cur);
@@ -33,7 +33,7 @@ std::vector<std::string> tokenize(std::string_view line) {
             have = true;
         }
     }
-    // unterminated quote: take what we have, being strict here just annoys people
+    // unterminated quote - just take it, erroring here would only annoy people
     if (have) out.push_back(cur);
     return out;
 }

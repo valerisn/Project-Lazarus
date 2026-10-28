@@ -1,4 +1,4 @@
-# everything in here is plain logic with no game dependency, so it's unit-testable
+# no game stuff in here, that's what makes it testable
 add_library(lazarus_core STATIC
   ini.cpp
   log.cpp

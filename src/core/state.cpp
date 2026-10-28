@@ -16,8 +16,7 @@ namespace lz {
 namespace fs = std::filesystem;
 
 static const KnownBuild kKnownBuilds[] = {
-    // Steam build 12839205, Unity 2021.3.17f1, GameAssembly.dll dated 2023-12-01.
-    // this is the only PC build that ever shipped as far as we can tell.
+    // steam build 12839205 (unity 2021.3.17f1). only PC build that ever shipped afaik
     {"1b579b75b1486c0e", "Steam build 12839205 (December 2023 release)"},
 };
 
@@ -44,9 +43,8 @@ std::string BootGuard::take_stale_lock() {
 }
 
 void BootGuard::begin(const std::string& what) {
-    // plain write + close so it's on disk before we jump into untrusted code.
-    // not bothering with FlushFileBuffers: a process crash doesn't lose the
-    // OS cache, only a power cut would, and then we have bigger problems.
+    // no FlushFileBuffers. a crashed process doesn't lose the OS cache, a
+    // power cut would, and then nobody cares about mod quarantine
     std::ofstream f(lock_path(), std::ios::binary | std::ios::trunc);
     f << what;
 }
@@ -89,7 +87,7 @@ std::string sha256_hex(const fs::path& file) {
     if (h == INVALID_HANDLE_VALUE) return "";
     BCRYPT_HASH_HANDLE hh = nullptr;
     std::string result;
-    // BCRYPT_SHA256_ALG_HANDLE is a pseudo-handle, no provider open/close dance (Win10+)
+    // pseudo-handle, saves the open/close provider dance. win10+ only, fine
     if (BCRYPT_SUCCESS(BCryptCreateHash(BCRYPT_SHA256_ALG_HANDLE, &hh, nullptr, 0, nullptr, 0, 0))) {
         std::vector<unsigned char> buf(1 << 20);
         DWORD got = 0;

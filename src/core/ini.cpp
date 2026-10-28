@@ -57,8 +57,8 @@ bool parse_float(std::string_view s, double& out) {
     if (v.empty()) return false;
     char* end = nullptr;
     errno = 0;
-    // strtod is locale dependent. the game runs with the C locale as far as we
-    // know, but if someone ever reports "1.5" parsing as 1, look here first.
+    // strtod is locale dependent. the game seems to run in the C locale, but if
+    // anyone ever reports 1.5 turning into 1, it's this
     double r = std::strtod(v.c_str(), &end);
     if (errno != 0 || end != v.c_str() + v.size()) return false;
     out = r;
@@ -67,12 +67,12 @@ bool parse_float(std::string_view s, double& out) {
 
 Ini Ini::parse(std::string_view text) {
     Ini ini;
-    // skip a UTF-8 BOM - Notepad loves adding these
+    // notepad loves adding a BOM
     if (text.size() >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB &&
         (unsigned char)text[2] == 0xBF)
         text.remove_prefix(3);
 
-    std::string section;  // keys before any [section] land in ""
+    std::string section;
     int lineno = 0;
     size_t pos = 0;
     while (pos <= text.size()) {
@@ -91,7 +91,7 @@ Ini Ini::parse(std::string_view text) {
                 continue;
             }
             section = to_lower(trim(std::string_view(line).substr(1, close - 1)));
-            ini.data_[section];  // so has_section() works for empty sections
+            ini.data_[section];  // empty sections should still exist
             continue;
         }
 
@@ -106,8 +106,8 @@ Ini Ini::parse(std::string_view text) {
             continue;
         }
         auto value = trim(std::string_view(line).substr(eq + 1));
-        // only strip trailing comments when there's whitespace before them,
-        // otherwise "path=C:\foo;bar" would get mangled
+        // only treat ; or # as a comment after whitespace, otherwise
+        // path=C:\foo;bar gets cut in half
         for (auto marker : {" ;", "\t;", " #", "\t#"}) {
             auto c = value.find(marker);
             if (c != std::string::npos) value = trim(std::string_view(value).substr(0, c));

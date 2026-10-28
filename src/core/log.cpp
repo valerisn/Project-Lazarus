@@ -64,9 +64,9 @@ bool Logger::open(const std::filesystem::path& path) {
     if (std::filesystem::exists(path, ec)) {
         auto prev = path.parent_path() / (path.stem().wstring() + L".prev" + path.extension().wstring());
         std::filesystem::remove(prev, ec);
-        std::filesystem::rename(path, prev, ec);  // if this fails we just overwrite, not worth dying over
+        std::filesystem::rename(path, prev, ec);  // if this fails we overwrite. whatever
     }
-    // _SH_DENYWR: let people open the log in an editor while the game runs
+    // _SH_DENYWR so you can have it open in notepad while the game runs
     f_ = _wfsopen(path.c_str(), L"wb", _SH_DENYWR);
     return f_ != nullptr;
 }
@@ -80,7 +80,7 @@ void Logger::close() {
 }
 
 void Logger::add_redaction(const std::string& needle, const std::string& replacement) {
-    // too-short needles would shred normal text ("C:" etc), not worth it
+    // something like "C:" would wreck every line
     if (needle.size() < 4) return;
     redactions_.push_back({to_lower(needle), replacement});
 }
@@ -88,8 +88,8 @@ void Logger::add_redaction(const std::string& needle, const std::string& replace
 std::string Logger::redact(std::string_view msg) const {
     std::string out(msg);
     for (auto& r : redactions_) {
-        // lowercase copy just for searching, positions line up 1:1 for ascii
-        // and profile paths are what we care about here
+        // search a lowercase copy. positions only line up for ascii, which is
+        // fine for profile paths
         std::string low = to_lower(out);
         size_t pos = 0;
         std::string rebuilt;
@@ -115,8 +115,7 @@ void Logger::write(LogLevel l, std::string_view tag, std::string_view msg) {
     if (f_) {
         std::fwrite(line.data(), 1, line.size(), f_);
         std::fwrite("\r\n", 1, 2, f_);
-        // flush every line. it's slower, but the whole point of this log is to
-        // survive the game crashing right after we write it
+        // flush every line. slower, but this log is mostly read after crashes
         std::fflush(f_);
     }
     if (sink_) sink_(line);

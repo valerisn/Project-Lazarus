@@ -1,7 +1,6 @@
 #pragma once
-// Console command registry. Lives in the loader so any mod can add commands
-// and any front-end (the F6 console today, maybe a pipe/TCP thing later) can
-// run them.
+// console commands. kept in the loader instead of the console mod so other
+// mods can register their own
 
 #include <functional>
 #include <map>
@@ -21,11 +20,11 @@ public:
 
     enum class Result { Ok, Empty, NotFound };
 
-    // false if the name is invalid or already taken by another owner
+    // false if the name's bad or another mod already owns it
     bool add(const std::string& name, const std::string& help, const std::string& owner, Handler fn);
     void remove_owner(const std::string& owner);
 
-    // args[0] is the command name. unknown commands print suggestions.
+    // args[0] is the command itself
     Result execute(std::string_view line, const Print& print) const;
 
     struct Entry {
@@ -36,7 +35,7 @@ public:
     const std::map<std::string, Entry>& entries() const { return cmds_; }
 
 private:
-    std::map<std::string, Entry> cmds_;  // lowercase name -> entry, sorted for help output
+    std::map<std::string, Entry> cmds_;  // std::map so help comes out sorted for free
 };
 
 bool is_valid_command_name(const std::string& name);

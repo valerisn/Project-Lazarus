@@ -5,8 +5,7 @@
 namespace lz {
 
 bool is_valid_mod_id(const std::string& id) {
-    // lowercase, digits, dash, underscore, dot. keeps ids usable as folder
-    // names and in log tags without any escaping nonsense.
+    // ids end up as folder names and log tags, keep them boring
     if (id.empty() || id.size() > 64) return false;
     if (id[0] == '.' || id[0] == '-') return false;
     for (char c : id) {
@@ -17,9 +16,8 @@ bool is_valid_mod_id(const std::string& id) {
 }
 
 static bool is_plain_dll_name(const std::string& s) {
-    // must be a bare file name inside the mod folder. no paths, no climbing
-    // out with ..\..\, otherwise a manifest could point the loader at any DLL
-    // on the machine.
+    // bare file name only. otherwise a mod.ini can say dll=..\..\whatever.dll
+    // and we'd load anything on the machine
     if (s.size() < 5) return false;
     if (s.find_first_of("/\\:") != std::string::npos) return false;
     if (s.find("..") != std::string::npos) return false;
