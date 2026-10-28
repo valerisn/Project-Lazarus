@@ -1,0 +1,44 @@
+name: release
+
+# push a tag like v0.2.0 to build, test and publish a release with checksums
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-2022
+    permissions:
+      contents: write  # only this job, only to create the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build and test
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          cmake --build build --config Release --parallel
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "ProjectLazarus-${{ github.ref_name }}"
+          scripts/checksums.ps1 build/dist
+          Compress-Archive -Path build/dist/* -DestinationPath "$name.zip"
+          $h = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$h  $name.zip" | Set-Content "$name.zip.sha256" -Encoding ascii
+
+      # gh ships on the runner, so no third-party release action needed
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = "ProjectLazarus-${{ github.ref_name }}"
+          gh release create "${{ github.ref_name }}" "$name.zip" "$name.zip.sha256" build/dist/SHA256SUMS.txt `
+            --title "Project Lazarus ${{ github.ref_name }}" --generate-notes --prerelease
