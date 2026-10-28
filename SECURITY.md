@@ -27,7 +27,7 @@ What Lazarus *does* promise:
 | You can always get back to a clean game | SHIFT at startup (safe mode), `[loader] enabled = false`, automatic quarantine of mods that crash during startup, or deleting `version.dll`. |
 | The installer only removes what it installed | Uninstall works from a hash-checked install manifest and refuses to delete a `version.dll` it didn't put there unless you pass `-Force`. |
 | No network activity | The loader and bundled mods make no network connections and never update themselves. |
-| No elevated privileges | Nothing needs administrator rights. The installer only asks for them if the game folder itself isn't writable. |
+| No elevated privileges | Nothing needs administrator rights. If the game folder isn't writable, the installer stops and says so instead of elevating. |
 | Game files are never modified | Installing only adds `version.dll` and `Lazarus\`. |
 
 ## In scope
