@@ -34,8 +34,14 @@ std::vector<DiscoveredMod> discover_mods(const std::filesystem::path& mods_dir, 
             m.errors.push_back(err);
         } else {
             m.valid = parse_manifest(ini, d, m.manifest, m.errors, m.warnings);
-            if (m.valid && m.manifest.id != to_lower(folder))
-                m.warnings.push_back("folder name '" + folder + "' differs from id '" + m.manifest.id + "'");
+            // used to be a warning. security review: with a mismatch allowed, a
+            // folder like "aaa-pack" claiming id = graphics-settings sorted first
+            // and ran *its* dll under the id the user enabled. folder == id makes
+            // the id unique per mods/ dir, and the user can see what they enabled.
+            if (m.valid && m.manifest.id != to_lower(folder)) {
+                m.errors.push_back("folder name '" + folder + "' must match the mod id '" + m.manifest.id + "'");
+                m.valid = false;
+            }
         }
         out.push_back(std::move(m));
     }
@@ -50,6 +56,13 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
 
     auto skip = [&](const std::string& id, std::string reason) { plan.skipped.push_back({id, std::move(reason)}); };
 
+    // an id claimed by more than one valid mod loads *none* of them. picking
+    // one (we used to take the first by folder order) means the attacker just
+    // has to win the sort.
+    std::map<std::string, int> id_count;
+    for (auto& m : mods)
+        if (m.valid) ++id_count[m.manifest.id];
+
     for (auto& m : mods) {
         if (!m.valid) {
             std::string why = "invalid mod.ini";
@@ -58,8 +71,10 @@ LoadPlan plan_load(const std::vector<DiscoveredMod>& mods, const LoaderConfig& c
             continue;
         }
         const auto& man = m.manifest;
-        if (!present.insert(man.id).second) {
-            skip(man.id, "duplicate id (another folder already uses it), folder " + m.folder + " ignored");
+        present.insert(man.id);
+        if (id_count[man.id] > 1) {
+            skip(man.id, "more than one installed mod claims this id (folder " + m.folder +
+                             ") - none of them will load until the duplicates are removed");
             continue;
         }
         // explicit opt-in is the security model: dropping a DLL into mods/

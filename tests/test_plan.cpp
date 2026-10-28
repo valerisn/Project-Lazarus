@@ -114,10 +114,28 @@ TEST_CASE("plan: invalid manifests and duplicate ids") {
     broken.errors = {"missing dll"};
     auto dup = mk("a");
     dup.folder = "a-copy";
-    auto p = plan_load({mk("a"), dup, broken}, cfg_enabled({"a", "broken"}), {});
-    CHECK(order(p) == std::vector<std::string>{"a"});
+    auto p = plan_load({mk("a"), dup, broken, mk("ok")}, cfg_enabled({"a", "broken", "ok"}), {});
+    // duplicate id: neither loads, unrelated mods are unaffected
+    CHECK(order(p) == std::vector<std::string>{"ok"});
     CHECK(reason(p, "broken").find("missing dll") != std::string::npos);
-    CHECK(reason(p, "a").find("a-copy") != std::string::npos);
+    CHECK(reason(p, "a").find("more than one installed mod claims this id") != std::string::npos);
+}
+
+TEST_CASE("plan: decoy folder can't hijack an enabled id (security review #1)") {
+    TempDir td;
+    auto mods = td.path / "mods";
+    // sorts before the real folder and claims its id
+    write_file(mods / "aaa-graphics-pack" / "mod.ini", "[mod]\nid=graphics-settings\ndll=evil.dll\napi_version=1\n");
+    write_file(mods / "graphics-settings" / "mod.ini", "[mod]\nid=graphics-settings\ndll=gfx.dll\napi_version=1\n");
+    std::vector<std::string> w;
+    auto found = discover_mods(mods, w);
+    auto p = plan_load(found, cfg_enabled({"graphics-settings"}), {});
+    CHECK_EQ(p.load_order.size(), 1u);
+    if (p.load_order.size() == 1) CHECK_EQ(p.load_order[0].dll, "gfx.dll");
+    bool decoy_rejected = false;
+    for (auto& s : p.skipped)
+        if (s.reason.find("must match the mod id") != std::string::npos) decoy_rejected = true;
+    CHECK(decoy_rejected);
 }
 
 TEST_CASE("plan: enabled but not installed warns") {
@@ -140,7 +158,7 @@ TEST_CASE("discover: scans folders, ignores junk, reports bad manifests") {
     for (auto& f : found) {
         if (f.folder == "good") CHECK(f.valid);
         if (f.folder == "bad") CHECK(!f.valid && f.errors.size() >= 2);
-        if (f.folder == "Renamed") CHECK(f.valid && f.warnings.size() == 1);
+        if (f.folder == "Renamed") CHECK(!f.valid && f.errors.size() == 1);  // folder must equal id now
     }
 }
 
