@@ -49,6 +49,12 @@ Findings from this run:
 * The game ships a single quality level (`0=Ultra`), so `quality_level` has no effect in this game.
 * Initial scene load mode is reported as 2 (an internal value, not Single/Additive). Additive-only re-apply logic is unaffected.
 
+### Runs 2-3: 2026-10-28, same build: skip-intro and dev console
+
+* **skip-intro, verified in game.** Splashscreen to Initialize took **4.1 s** (vanilla 21.3 s). The splash census shows two `VideoPlayer`s (GameMill and Flux logos) driven by `Lucille.BootupVideoSequence`. The first attempt (11.7 s) only looked like it failed: `Initialize` took 9 s to load cold, with the logos still on screen. On the second run it loaded in 1.6 s.
+* **dev-console, opens in game.** F6 opens it; `help` lists all commands. The level/cheat commands haven't been exercised yet.
+* `LevelSelection` (the developers' level-select scene) loads from the normal main-menu flow.
+
 ## Still unverified
 
 1. Safe mode via SHIFT and uninstall on the real install.
