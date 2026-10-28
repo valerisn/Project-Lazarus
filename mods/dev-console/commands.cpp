@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "cheat_policy.h"
 #include "il2cpp.h"
 
 namespace con {
@@ -226,6 +227,20 @@ void register_all(const LazarusApi* a, LazarusMod* m) {
                 out("usage: cheat <Method> [int]");
                 return;
             }
+            if (is_destructive_cheat(args[1])) {
+                out(args[1] + " can delete or overwrite your save. if you really mean it: cheat-unsafe " + args[1]);
+                return;
+            }
+            int v = args.size() > 2 ? std::atoi(args[2].c_str()) : 0;
+            cheat_call(out, args[1].c_str(), nullptr, args.size() > 2 ? &v : nullptr);
+        });
+    reg("cheat-unsafe", "like 'cheat' but allows save-deleting/overwriting methods. back up your save first",
+        [](auto& args, auto& out) {
+            if (args.size() < 2) {
+                out("usage: cheat-unsafe <Method> [int]");
+                return;
+            }
+            api->log(self, LAZARUS_LOG_WARN, "cheat-unsafe %s requested", args[1].c_str());
             int v = args.size() > 2 ? std::atoi(args[2].c_str()) : 0;
             cheat_call(out, args[1].c_str(), nullptr, args.size() > 2 ? &v : nullptr);
         });
