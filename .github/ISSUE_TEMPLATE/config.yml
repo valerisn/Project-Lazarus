@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/valerisn/Project-Lazarus/security/advisories/new
+    about: Report vulnerabilities privately, not as a public issue.
+  - name: Install help and troubleshooting
+    url: https://github.com/valerisn/Project-Lazarus/blob/main/docs/INSTALL.md
+    about: Install, uninstall, safe mode and common problems.

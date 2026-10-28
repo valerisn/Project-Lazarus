@@ -1,0 +1,59 @@
+name: Game bug (fix candidate)
+description: A bug in The Walking Dead Destinies itself that Lazarus might be able to fix
+labels: ["research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is for bugs in **the game**, not in Lazarus: softlocks, broken objectives, crashes at a specific spot, controls that don't work.
+        The more exact the location, the better. With the dev console, `load <level>` can often get us there without a save file (see docs/CONSOLE.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What goes wrong
+      placeholder: "During the final phase of Daryl vs the Governor I can only walk, punch and dodge do nothing."
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where in the game
+      description: Episode / mission, and what's happening on screen just before
+      placeholder: "Too Far Gone, right after the Governor gets down from the tank"
+    validations:
+      required: true
+  - type: dropdown
+    id: repro
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Sometimes
+        - Happened once
+    validations:
+      required: true
+  - type: dropdown
+    id: vanilla
+    attributes:
+      label: Does it happen without Lazarus?
+      description: Uninstall or hold SHIFT at startup to check. If it only happens with Lazarus, use the "Lazarus bug" form instead.
+      options:
+        - "Yes, it also happens without Lazarus"
+        - "Not tested"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: log
+    attributes:
+      label: lazarus.log (if you were running Lazarus)
+      description: "With `log_level = debug` in lazarus.ini, if you can"
+      render: text
+  - type: textarea
+    id: save
+    attributes:
+      label: Save file or video
+      description: A save from just before the problem, or a clip, helps a lot. Drag files in or link them.

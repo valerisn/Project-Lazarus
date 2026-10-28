@@ -1,0 +1,29 @@
+name: Feature or mod idea
+description: Suggest an option, a fix, or a new mod
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Link Steam threads or reviews if other players complain about it too. Evidence helps it get prioritized.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything you already know
+      description: Class or method names from tools/il2cpp_meta.py, console findings, links...
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Helping out
+      options:
+        - label: I can test this in game
+        - label: I'd like to try writing it myself

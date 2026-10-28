@@ -1,0 +1,82 @@
+name: Lazarus bug
+description: The loader, installer or one of our mods isn't working right
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security problems go through [private reporting](https://github.com/valerisn/Project-Lazarus/security/advisories/new) instead, please.
+        First check: does the problem go away if you hold **SHIFT** while the game starts (safe mode)? That tells us whether it's a mod or the loader.
+  - type: dropdown
+    id: area
+    attributes:
+      label: What's broken
+      options:
+        - Installer / uninstaller
+        - Loader (game won't start, no lazarus.log, crashes at boot)
+        - graphics-settings
+        - fps-counter
+        - skip-intro
+        - dev-console
+        - mouse-sensitivity
+        - key-rebind
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "I set target_fps = 60 but the counter shows 144..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Enable graphics-settings
+        2. Start the game
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: lazarus.log
+      description: "From `<game>\\Lazarus\\logs\\lazarus.log` (or `lazarus.prev.log` if the game has been restarted since). Paste it, or drag the file in."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: bootstrap
+    attributes:
+      label: bootstrap.log (only if lazarus.log is missing)
+      render: text
+  - type: input
+    id: mods
+    attributes:
+      label: Enabled mods
+      description: "The `enabled =` line from `Lazarus\\lazarus.ini`"
+      placeholder: "enabled = graphics-settings, skip-intro"
+  - type: dropdown
+    id: display
+    attributes:
+      label: Display mode
+      options:
+        - Borderless / fullscreen window (default)
+        - Exclusive fullscreen
+        - Windowed
+        - Don't know
+  - type: input
+    id: lazarus_version
+    attributes:
+      label: Lazarus version or commit
+      description: "From `VERSION.txt` in the download, or the CI run / commit you got it from"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I tried safe mode (SHIFT at startup) and noted above whether it helps
+        - label: I searched existing issues
