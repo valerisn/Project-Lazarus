@@ -21,10 +21,11 @@ The game is Unity 2021.3.17f1 using **IL2CPP**, so ordinary .NET mods and Harmon
 | Safe mode, crash quarantine, build fingerprinting | done, tested |
 | **graphics-settings** fix: frame cap, vsync, window mode, resolution, LOD bias, anisotropic filtering | frame cap + vsync **verified in game**. Other options built and tested against the fake engine, not yet checked in game. The game has only one quality level, so `quality_level` does nothing here. |
 | **fps-counter**: on-screen FPS box and FPS in the log | **verified in game** (D3D11) |
+| **dev-console** (F6): jump to any level, the game's own developer cheats (god mode, skip objective, end level...), object inspection, autoexec | built and tested against the fake engine. **Game commands not yet run in game.** See [docs/CONSOLE.md](docs/CONSOLE.md) |
 | Installer / uninstaller with Steam library discovery | done, tested. Discovery confirmed against a real install on a custom drive path. |
 | Mouse sensitivity fix | planned, see issues |
 | Key rebinding | planned, see issues |
-| Governor finale softlocks | investigating, needs save files |
+| Governor finale softlocks | investigating. Located in `23_WGCFacilityTooFarGone`; `load TooFarGone` should replace the need for save files |
 
 **Supported game version:** Steam build 12839205 (December 2023, GameAssembly fingerprint `1b579b75b1486c0e`). As far as we can tell this is the only PC build that ever shipped. On other builds the loader still runs but skips mods pinned to a specific build.
 

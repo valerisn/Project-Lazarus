@@ -1,4 +1,4 @@
-# Mod API (v1)
+# Mod API (v2)
 
 Mods are native x64 DLLs written against one header, [`include/lazarus/lazarus_api.h`](../include/lazarus/lazarus_api.h). It's plain C, so any compiler or CRT works. The smallest working mod is [`examples/hello-mod`](../examples/hello-mod).
 
@@ -49,6 +49,19 @@ Returning non-zero, or raising an exception, disables the mod for the session. T
 | `hook_create(self, target, detour, &original)` | inline hook (MinHook), enabled immediately, removed automatically at shutdown |
 | `hook_remove(self, target)` | removes one of your hooks early |
 | `on_scene_loaded(self, fn, user)` | `fn(user, scene_name, build_index, mode)` after every scene load, after the game's own listeners run |
+
+## API v2 additions
+
+Check `api->api_version >= 2` before using these. A v1 mod (`api_version = 1` in mod.ini) keeps working unchanged.
+
+| function | notes |
+|---|---|
+| `on_update(self, fn, user)` | `fn(user)` once per frame on the main thread. Frame-gated on `Time.frameCount`, because the engine hooks behind it fire several times per frame. |
+| `run_on_main(self, fn, user)` | **thread-safe**. Queues `fn(user)` for the next frame on the main thread. Use it to touch game state from your own threads (UI, timers). |
+| `register_command(self, name, help, fn, user)` | adds a console command. `fn(user, argc, argv, print, print_ctx)` runs on the main thread. Names are case-insensitive; you can't replace another mod's command. |
+| `execute_command(line, print, ctx)` | run a command line (main thread only). Returns `LAZARUS_ERR_NOT_FOUND` for unknown commands. |
+
+The per-frame tick comes from hooking `UnityEngineInternal.Input.NativeInputSystem.NotifyBeforeUpdate` and `UnityEngine.BeforeRenderHelper.Invoke`, the two native-to-managed calls the engine makes every frame in this build. Crashing update callbacks, tasks, and commands are caught and disabled, just like scene callbacks.
 
 ## IL2CPP calling convention
 
