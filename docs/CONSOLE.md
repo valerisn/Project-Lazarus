@@ -29,7 +29,8 @@ It isn't known yet whether the release build actually spawns the `LucilleCheats`
 | `god`, `immortal`, `instakill`, `ammo`, `stamina`, `invisible` | toggle that cheat; prints the new state |
 | `skipobj [n]` | skip the current objective(s) |
 | `endlevel`, `skipnarrative`, `skiphq` | the developers' progression shortcuts |
-| `cheat <Method> [int]` | call any `LucilleCheats` method, e.g. `cheat AddSkillPoints` |
+| `cheat <Method> [int]` | call any `LucilleCheats` method, e.g. `cheat AddSkillPoints`. Methods that touch saves or delete things are refused. |
+| `cheat-unsafe <Method> [int]` | same as `cheat`, but allows save-deleting/overwriting methods such as `CallOnDeleteMainSave`. Back up your save first. |
 | `timescale [x]` | game speed (0 = frozen, 0.25 = slow motion, 4 = fast) |
 | `fpscap [n]` | frame rate cap (-1 = unlimited) |
 | `find <Ns.Class> [filter]` | names of live objects of a type |

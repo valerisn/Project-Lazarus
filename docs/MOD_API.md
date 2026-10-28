@@ -15,7 +15,7 @@ Mods are native x64 DLLs written against one header, [`include/lazarus/lazarus_a
 
 | key | required | meaning |
 |---|---|---|
-| `id` | yes | lowercase letters, digits, `- _ .`, max 64 chars. Should match the folder name. |
+| `id` | yes | lowercase letters, digits, `- _ .`, max 64 chars. **Must equal the mod's folder name**, or the mod is rejected. If two mods somehow claim the same id, neither loads. Both rules exist so a mod can't impersonate the one you enabled. |
 | `dll` | yes | bare file name inside the mod folder. Paths and `..` are rejected. |
 | `api_version` | yes | the `LAZARUS_API_VERSION` you built against. A loader older than this skips the mod. |
 | `name`, `version`, `author`, `description` | no | shown in the log |

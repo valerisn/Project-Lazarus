@@ -36,7 +36,7 @@ The PC release of *The Walking Dead: Destinies* (Steam App ID 2192790) shipped w
 
 ## Quick start
 
-1. **Download** `project-lazarus-dist` from the latest green [build run](https://github.com/valerisn/Project-Lazarus/actions/workflows/build.yml). Versioned releases will follow once more of the above is verified.
+1. **Download** a [release](https://github.com/valerisn/Project-Lazarus/releases) zip, or until the first release is tagged, `project-lazarus-dist` from the latest green [build run](https://github.com/valerisn/Project-Lazarus/actions/workflows/build.yml) (needs a GitHub login). Each download includes `SHA256SUMS.txt`, see [Verifying a download](#verifying-a-download).
 2. **Close the game** and run `Install.bat`. It finds the game in any Steam library or custom folder, shows you what it found, and asks before changing anything.
 3. **Pick your mods** in `<game>\Lazarus\lazarus.ini`:
    ```ini
@@ -51,7 +51,17 @@ Full guide: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Uninstall
 
-Run `Uninstall.bat`. It removes exactly what was installed, using the record it made at install time, and restores anything it backed up. Doing it by hand also works: delete `version.dll` and the `Lazarus` folder from the game folder. Those are the only two things Lazarus ever adds.
+Run `Uninstall.bat`. It removes exactly what was installed, using the record it made at install time, plus Lazarus's own logs and state, and restores anything it backed up. Mods you added yourself are left in place and listed. Doing it by hand also works: delete `version.dll` and the `Lazarus` folder from the game folder.
+
+## Verifying a download
+
+Every build and release ships `SHA256SUMS.txt`, produced by public CI from public source. To check a file:
+
+```bash
+powershell -NoProfile -Command "(Get-FileHash version.dll -Algorithm SHA256).Hash.ToLower()"
+```
+
+The result must match the `version.dll` line in `SHA256SUMS.txt`.
 
 ## Safety
 
@@ -60,6 +70,8 @@ Run `Uninstall.bat`. It removes exactly what was installed, using the record it 
 * **Safe mode.** Hold **SHIFT** while the game starts and no mods load.
 * **Crash quarantine.** If a mod crashes the game while starting, it's disabled automatically on the next launch, with a note in `Lazarus\state\quarantine.txt`.
 * **Fails open.** If anything in the loader goes wrong, it logs the problem and the game runs unmodified.
+* **Mods can't impersonate each other.** A mod's folder must match its id, and duplicate ids load nothing.
+* **Your username stays out of logs.** Paths under your user profile show up as `%USERPROFILE%`, so logs are safe to paste.
 * **No network access, no auto-updates, no admin rights.**
 
 Mods are native code and run with your user's permissions, like any program. Only enable mods you trust. Details and how to report problems: [SECURITY.md](SECURITY.md).

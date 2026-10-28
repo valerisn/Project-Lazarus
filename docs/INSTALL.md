@@ -22,7 +22,16 @@ Reinstalling or upgrading never overwrites these two kinds of files.
 
 ## Uninstall
 
-Run `Uninstall.bat` (or `Install-Lazarus.ps1 -Uninstall`). It reads `Lazarus\install-manifest.txt`, removes `version.dll` (only if it's still the one Lazarus installed), restores any backed-up `version.dll`, and deletes the `Lazarus` folder. Add `-KeepSettings` to keep your `.ini` files.
+Run `Uninstall.bat` (or `Install-Lazarus.ps1 -Uninstall`). It reads `Lazarus\install-manifest.txt` and:
+
+* removes `version.dll`, but only if it's still the exact file Lazarus installed;
+* restores any `version.dll` it backed up;
+* removes every file the installer put in `Lazarus\`, plus what Lazarus writes at runtime (logs, crash state, backups, key-rebind's `actions-*.json`);
+* removes folders that end up empty.
+
+**Anything you added yourself, like a third-party mod in `Lazarus\mods\`, is left alone** and listed at the end, so you can decide what to do with it. Add `-KeepSettings` to also keep your `.ini` files.
+
+If the install record contains paths outside `version.dll` and `Lazarus\` (meaning it was edited or damaged), uninstall refuses to touch anything and tells you to remove the files by hand.
 
 Manual removal also works: delete `version.dll` and the `Lazarus` folder from the game folder. That's all Lazarus ever adds.
 
