@@ -27,11 +27,14 @@ struct Cfg {
     std::string splash_scene = "Splashscreen";
     std::string target = "Initialize Scene Collection";
     float fallback_timescale = 20.0f;
+    bool census = true;
 } cfg;
 
 int g_countdown = -1;          // frames until we act, -1 = idle
 bool g_fast_forwarding = false;
 bool g_done = false;
+bool g_timing = false;
+ULONGLONG g_splash_start = 0;
 
 #define LOG(lvl, ...) api->log(self, lvl, __VA_ARGS__)
 
@@ -74,6 +77,12 @@ void on_update(void*) {
 }
 
 void on_scene(void*, const char* name, int, int) {
+    if (g_timing && _stricmp(name, cfg.splash_scene.c_str()) != 0) {
+        // baseline from the first live run without this mod: 21.3s
+        g_timing = false;
+        LOG(LAZARUS_LOG_INFO, "intro took %.1fs this time (vanilla was ~21.3s on the dev machine)",
+            (double)(GetTickCount64() - g_splash_start) / 1000.0);
+    }
     if (g_fast_forwarding && _stricmp(name, cfg.splash_scene.c_str()) != 0) {
         // left the splash one way or another - put time back to normal before anyone notices
         set_timescale(1.0f);
@@ -83,9 +92,22 @@ void on_scene(void*, const char* name, int, int) {
         return;
     }
     if (g_done || _stricmp(name, cfg.splash_scene.c_str()) != 0) return;
-    // wait a couple of frames: calling Load() from inside the scene-loaded
+    g_splash_start = GetTickCount64();
+    g_timing = true;
+
+    // first live attempt: Load() fired fine but Initialize then took 9s to
+    // load with the logos still up, so "skipped" looked exactly like "didn't
+    // work". before guessing again, write down what this scene actually is.
+    if (cfg.census) {
+        std::string err;
+        auto lines = il2::census(err);
+        if (!err.empty()) LOG(LAZARUS_LOG_WARN, "census failed: %s", err.c_str());
+        LOG(LAZARUS_LOG_INFO, "census of '%s': %zu distinct component(s)", name, lines.size());
+        for (auto& l : lines) LOG(LAZARUS_LOG_INFO, "  %s", l.c_str());
+    }
+    // next frame, not this one: calling Load() from inside the scene-loaded
     // callback of the very scene we're replacing felt like asking for it
-    g_countdown = 2;
+    g_countdown = 1;
 }
 
 }  // namespace
@@ -106,6 +128,7 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const Lazar
     if (a->config_get_string(m, "skip", "load_collection", buf, sizeof buf) && buf[0]) cfg.target = buf;
     cfg.fallback_timescale = (float)a->config_get_float(m, "skip", "fallback_timescale", 20.0);
     if (cfg.fallback_timescale < 1.0f || cfg.fallback_timescale > 100.0f) cfg.fallback_timescale = 20.0f;
+    cfg.census = a->config_get_bool(m, "skip", "log_census", 1) != 0;
 
     if (a->on_update(m, &on_update, nullptr) != LAZARUS_OK) {
         a->log(m, LAZARUS_LOG_ERROR, "no frame tick available");
