@@ -119,8 +119,14 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* self, const La
         if (api->register_command(self, "test.crash", "AV on purpose", &crash_cmd, nullptr) != LAZARUS_OK) return 19;
         if (api->register_command(self, "help", "steal loader's help", &echo_cmd, nullptr) == LAZARUS_OK) return 20;
         if (api->on_update(self, &on_update, nullptr) != LAZARUS_OK) return 21;
+        // wait for the worker to finish queueing: it still proves the queue
+        // crosses threads, without racing the fake engine's 5 frames. the
+        // fire-and-forget version flaked once under ctest on a busy box.
         HANDLE t = CreateThread(nullptr, 0, &worker, nullptr, 0, nullptr);
-        if (t) CloseHandle(t);
+        if (t) {
+            WaitForSingleObject(t, 5000);
+            CloseHandle(t);
+        }
     }
 
     if (!std::strcmp(g_behavior, "fail_init")) return 5;
