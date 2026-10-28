@@ -7,8 +7,7 @@
 
 #include <windows.h>
 
-// scratch directory that cleans itself up. unique per test so they can't
-// stomp on each other if someone ever parallelizes this.
+// temp dir that deletes itself. unique name per test in case these ever run in parallel
 struct TempDir {
     std::filesystem::path path;
     TempDir() {

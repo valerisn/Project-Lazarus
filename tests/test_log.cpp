@@ -38,7 +38,7 @@ TEST_CASE("log: filters below level, formats long messages") {
     }
 }
 
-TEST_CASE("log: user profile path is redacted, case-insensitively (security review #5)") {
+TEST_CASE("log: user profile path is redacted, case-insensitively") {
     Logger lg;
     std::vector<std::string> got;
     lg.set_sink([&](const std::string& s) { got.push_back(s); });

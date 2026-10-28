@@ -20,8 +20,7 @@ import sys
 
 SANITY = 0xFAB11BAF
 
-# header is sanity, version, then 31 (offset, size) pairs for v29.
-# order matters, it's straight from the struct layout.
+# v29 header: sanity, version, then 31 (offset, size) pairs in this exact order
 HEADER_SECTIONS = [
     "stringLiteral", "stringLiteralData", "string", "events", "properties",
     "methods", "parameterDefaultValues", "fieldDefaultValues",
@@ -34,9 +33,8 @@ HEADER_SECTIONS = [
     "windowsRuntimeTypeNames", "windowsRuntimeStrings", "exportedTypeDefinitions",
 ]
 
-# struct layouts for v29. sizes get sanity-checked against the section sizes
-# below, so if a future patch bumps the metadata version we fail loudly instead
-# of printing garbage.
+# v29 layouts. sizes get checked against the sections, so a different version
+# errors out instead of printing garbage
 TYPE_DEF = struct.Struct("<IIiiiiiIiiiiiiii8HII")  # 88 bytes
 METHOD_DEF = struct.Struct("<IiiiiIHHHH")           # 32 bytes
 IMAGE_DEF = struct.Struct("<IiiIiIiIiI")            # 40 bytes
@@ -91,9 +89,8 @@ class Metadata:
         self.images = self._table("images", IMAGE_DEF)
         self.params = self._table("parameters", PARAM_DEF)
         self.fields = self._table("fields", FIELD_DEF)
-        # declaringTypeIndex points into GameAssembly's Il2CppType table, which
-        # we can't see from here. the nestedTypes section is plain typedef
-        # indices though, so build outer<-inner from that instead.
+        # declaringTypeIndex points into GameAssembly, can't read that from here.
+        # nestedTypes is plain typedef indices though, so use that
         nested = self._table("nestedTypes", NESTED_DEF)
         self.outer = {}
         for ti, t in enumerate(self.types):

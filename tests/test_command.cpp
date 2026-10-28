@@ -51,7 +51,7 @@ TEST_CASE("command: ownership and invalid names") {
     auto noop = [](auto&, auto&) {};
     CHECK(r.add("load", "", "mod-a", noop));
     CHECK(!r.add("LOAD", "", "mod-b", noop));  // someone else's
-    CHECK(r.add("load", "new help", "mod-a", noop));  // owner may replace
+    CHECK(r.add("load", "new help", "mod-a", noop));  // same owner can replace it
     CHECK(!r.add("bad name", "", "mod-a", noop));
     CHECK(!r.add("", "", "mod-a", noop));
     r.add("other", "", "mod-b", noop);

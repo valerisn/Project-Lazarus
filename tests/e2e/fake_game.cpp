@@ -1,6 +1,4 @@
-// The "game exe": imports UnityPlayer.dll and calls into it, nothing else.
-// Same shape as The Walking Dead Destinies.exe, which is a tiny stub that
-// only imports UnityPlayer.dll + KERNEL32.
+// fake game exe. the real one is also just a stub that imports UnityPlayer.dll
 
 #include <windows.h>
 

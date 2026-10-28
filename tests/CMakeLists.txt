@@ -17,12 +17,12 @@ target_link_libraries(lazarus_tests PRIVATE lazarus_core)
 add_test(NAME core_unit_tests COMMAND lazarus_tests)
 add_subdirectory(e2e)
 
-# installer tests need Pester, which ships with Windows PowerShell 5.1
+# Pester 3 comes with windows powershell. 5 changed the syntax, hence the cap
 add_test(NAME installer_tests
   COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command
     "Import-Module Pester -MaximumVersion 4.99; Invoke-Pester -Script '${CMAKE_CURRENT_SOURCE_DIR}/installer/Install-Lazarus.Tests.ps1' -EnableExit")
 
-# python tooling tests, skipped if there's no python on the box
+# skipped if there's no python
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
   add_test(NAME tools_tests COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_il2cpp_meta.py)

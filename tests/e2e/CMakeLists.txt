@@ -1,5 +1,5 @@
-# Builds a fake "game folder" in build/e2e_stage that mirrors the real one:
-#   fake_game.exe -> UnityPlayer.dll -> VERSION.dll (our proxy) ... GameAssembly.dll
+# fake game folder in build/e2e_stage, same layout as the real one:
+#   fake_game.exe -> UnityPlayer.dll -> VERSION.dll (ours) ... GameAssembly.dll
 set(STAGE ${CMAKE_BINARY_DIR}/e2e_stage)
 set(MODDIR ${STAGE}/Lazarus/mods/test-mod)
 
@@ -23,13 +23,13 @@ foreach(t fake_gameassembly fake_unityplayer fake_game e2e_runner)
 endforeach()
 set_target_properties(test_mod PROPERTIES RUNTIME_OUTPUT_DIRECTORY $<1:${MODDIR}>)
 
-# the real proxy gets copied in as version.dll, exactly what the installer does
+# the real proxy, copied in like the installer would
 add_custom_command(TARGET e2e_runner POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:lazarus_proxy> ${STAGE}/version.dll)
 
 add_test(NAME e2e_bootstrap COMMAND ${STAGE}/e2e_runner.exe)
 
-# the real graphics-settings mod, dropped in the way a player would install it
+# real mods from here down
 add_dependencies(e2e_runner graphics_settings)
 add_custom_command(TARGET e2e_runner POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:graphics_settings> ${STAGE}/Lazarus/mods/graphics-settings/graphics_settings.dll

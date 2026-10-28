@@ -1,7 +1,6 @@
-// Stand-in for the game's GameAssembly.dll. Implements just enough of the
-// il2cpp C API for the loader to do its thing: two "assemblies", a
-// SceneManager.Internal_SceneLoaded method, one fake gameplay method, and a
-// few icalls. Exported fake_* functions let the fake engine drive it.
+// fake GameAssembly.dll. just enough il2cpp API for the loader: a few
+// "assemblies", Internal_SceneLoaded, one gameplay method to hook, some
+// icalls. the fake_* exports let the fake engine poke it
 
 #include <windows.h>
 
@@ -14,7 +13,7 @@
 namespace {
 
 struct FakeMethodInfo {
-    void* methodPointer;  // must be first, the loader relies on that layout
+    void* methodPointer;  // has to be first, same as the real MethodInfo
     const char* name;
     int argc;
 };
@@ -41,8 +40,8 @@ volatile int g_shutdown_called = 0;
 volatile int g_game_scene_listener_calls = 0;
 volatile int g_target_frame_rate = -1;
 
-// noinline + distinct bodies so the linker can't fold or inline them away;
-// MinHook needs a real function prologue to patch
+// noinline and different bodies or the linker folds them, and minhook needs
+// an actual function to patch
 __declspec(noinline) void Internal_SceneLoaded(int32_t handle, int32_t mode, const void*) {
     g_game_scene_listener_calls = g_game_scene_listener_calls + 1;
     if (handle < 0 || mode < 0) OutputDebugStringA("impossible");
@@ -82,7 +81,7 @@ int32_t icall_GetBuildIndexInternal(int32_t handle) { return handle; }
 void icall_set_targetFrameRate(int32_t v) { g_target_frame_rate = v; }
 int32_t icall_get_targetFrameRate() { return g_target_frame_rate; }
 
-// graphics engine state, roughly what a fresh Unity player boots with
+// roughly what a fresh unity player starts with
 volatile int g_vsync = 1, g_quality = 1, g_aniso = 1;
 volatile float g_lod = 1.0f;
 volatile int g_res_w = 1920, g_res_h = 1080, g_res_mode = 1, g_res_hz = 0;
@@ -90,8 +89,7 @@ volatile int g_res_w = 1920, g_res_h = 1080, g_res_mode = 1, g_res_hz = 0;
 void icall_set_vsync(int32_t v) { g_vsync = v; }
 int32_t icall_get_vsync() { return g_vsync; }
 void icall_set_quality(int32_t q, bool) {
-    // real unity applies the preset's own values when switching level,
-    // which is exactly the trap the mod has to handle
+    // like real unity: switching preset stomps vsync/lod
     g_quality = q;
     g_vsync = 1;
     g_lod = 1.0f;
@@ -112,8 +110,7 @@ int32_t icall_screen_h() { return g_res_h; }
 int32_t icall_get_mode() { return g_res_mode; }
 int32_t icall_frame_count() { return g_frame; }
 
-// fake System.String[] with the real Il2CppArray layout: header, bounds,
-// max_length, then elements at +32
+// string[] laid out like a real Il2CppArray, items at +32
 FakeString g_q_low{L"Low"}, g_q_med{L"Medium"}, g_q_high{L"High"};
 struct {
     void* klass;
@@ -187,10 +184,9 @@ EXPORT uint32_t il2cpp_array_length(void* arr) {
 EXPORT const wchar_t* il2cpp_string_chars(void* s) { return static_cast<FakeString*>(s)->chars; }
 EXPORT int32_t il2cpp_string_length(void* s) { return (int32_t)std::wcslen(static_cast<FakeString*>(s)->chars); }
 
-// ---- driven by the fake engine / test ----
+// ---- the fake engine calls these ----
 
-// what the real engine does on a scene load: invoke the managed method via
-// its MethodInfo. calling through methodPointer means we hit the hooked code.
+// goes through methodPointer like the real engine does, so the hook gets hit
 EXPORT void fake_engine_load_scene(int32_t handle, int32_t mode) {
     auto fn = reinterpret_cast<void (*)(int32_t, int32_t, const void*)>(g_scene_methods[0].methodPointer);
     fn(handle, mode, &g_scene_methods[0]);
@@ -199,8 +195,7 @@ EXPORT int fake_game_get_value() {
     auto fn = reinterpret_cast<int (*)(const void*)>(g_game_methods[0].methodPointer);
     return fn(&g_game_methods[0]);
 }
-// one engine frame: the input system pumps twice (dynamic + before-render),
-// which is exactly why the loader has to gate on frameCount
+// one frame. input pumps twice per frame, that's the frameCount gating test
 EXPORT void fake_engine_frame() {
     g_frame = g_frame + 1;
     auto fn = reinterpret_cast<void (*)(int32_t, const void*)>(g_input_methods[0].methodPointer);
@@ -208,7 +203,7 @@ EXPORT void fake_engine_frame() {
     fn(4, &g_input_methods[0]);
 }
 
-// the game resetting things between scenes, like real games love to do
+// the game resetting stuff between scenes
 EXPORT void fake_game_meddle() {
     g_target_frame_rate = 30;
     g_vsync = 1;

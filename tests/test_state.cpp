@@ -17,7 +17,7 @@ TEST_CASE("bootguard: crash mid-init is detected once") {
     {
         BootGuard g(td.path / "state");
         g.begin("mod:a");
-        // simulated crash: no end()
+        // "crash": never call end()
     }
     BootGuard g2(td.path / "state");
     CHECK_EQ(g2.take_stale_lock(), "mod:a");

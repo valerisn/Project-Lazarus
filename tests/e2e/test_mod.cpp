@@ -1,5 +1,4 @@
-// Mod used by the end-to-end tests. Exercises every API entry point and can
-// be told to misbehave via its config.ini:
+// e2e test mod. touches every api function and can be told to misbehave:
 //
 //   [test]
 //   behavior = normal | fail_init | throw_init | exit_in_init | crash_in_scene
@@ -44,12 +43,12 @@ void on_scene(void*, const char* name, int idx, int mode) {
     event(buf);
     if (!std::strcmp(g_behavior, "crash_in_scene") && g_scene_count == 1) {
         volatile int* p = nullptr;
-        *p = 1;  // deliberate access violation, loader should disable this callback
+        *p = 1;  // on purpose. loader should kill this callback
     }
     if (g_set_fps) g_set_fps((int)g_api->config_get_int(g_self, "test", "target_fps", 60));
 }
 
-// ---- v2 checks, reported via the log so the event-order asserts stay put
+// ---- v2 checks. these log instead of writing events so the event-order checks don't change
 
 DWORD g_main_tid = 0;
 int g_updates = 0;
@@ -110,7 +109,7 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* self, const La
     if (api->resolve_icall("UnityEngine.Nope::nothing")) return 15;
     if (api->on_scene_loaded(self, &on_scene, nullptr) != LAZARUS_OK) return 16;
 
-    // malformed value -> default + loader warning
+    // bad value -> default + a warning
     if (api->config_get_bool(self, "test", "not_a_bool", 1) != 1) return 17;
 
     if (api->api_version >= 2) {
@@ -119,9 +118,8 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* self, const La
         if (api->register_command(self, "test.crash", "AV on purpose", &crash_cmd, nullptr) != LAZARUS_OK) return 19;
         if (api->register_command(self, "help", "steal loader's help", &echo_cmd, nullptr) == LAZARUS_OK) return 20;
         if (api->on_update(self, &on_update, nullptr) != LAZARUS_OK) return 21;
-        // wait for the worker to finish queueing: it still proves the queue
-        // crosses threads, without racing the fake engine's 5 frames. the
-        // fire-and-forget version flaked once under ctest on a busy box.
+        // wait for the worker or it can lose the race against the 5 fake
+        // frames. flaked once under ctest before this
         HANDLE t = CreateThread(nullptr, 0, &worker, nullptr, 0, nullptr);
         if (t) {
             WaitForSingleObject(t, 5000);

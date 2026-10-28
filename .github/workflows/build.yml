@@ -4,17 +4,16 @@ on:
   push:
   pull_request:
 
-# read-only token: this workflow builds and tests, it never writes to the repo
+# never writes to the repo
 permissions:
   contents: read
 
 jobs:
   windows:
-    # pinned so a runner image bump can't silently change the toolchain
+    # pinned, a new image shouldn't quietly change the compiler
     runs-on: windows-2022
     steps:
-      # actions pinned to full commit SHAs, not tags - a moved tag can't
-      # swap code under us. dependabot keeps these current.
+      # SHAs not tags, tags can be moved. dependabot bumps them
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

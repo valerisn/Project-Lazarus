@@ -7,7 +7,7 @@ endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# static CRT so the proxy doesn't depend on whatever VC++ redist the player has
+# static CRT, can't count on players having the right VC++ redist
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 if(MSVC)
@@ -29,8 +29,7 @@ add_subdirectory(mods/key-rebind)
 add_subdirectory(examples/hello-mod)
 add_subdirectory(tests)
 
-# build/dist = exactly what a player gets: version.dll + Lazarus/ + installer.
-# the graphics-settings target already drops its files in there.
+# build/dist is what a player downloads. the mods copy themselves in there
 set(DIST ${CMAKE_BINARY_DIR}/dist)
 file(WRITE ${DIST}/VERSION.txt "${PROJECT_VERSION}\n")
 add_custom_target(dist ALL

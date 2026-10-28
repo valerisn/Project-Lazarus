@@ -1,6 +1,6 @@
 name: release
 
-# push a tag like v0.2.0 to build, test and publish a release with checksums
+# push a v1.2.3 tag to make a release
 on:
   push:
     tags: ['v*.*.*']
@@ -33,7 +33,7 @@ jobs:
           $h = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$h  $name.zip" | Set-Content "$name.zip.sha256" -Encoding ascii
 
-      # gh ships on the runner, so no third-party release action needed
+      # gh is on the runner already, no need for a release action
       - name: Publish release
         shell: pwsh
         env:

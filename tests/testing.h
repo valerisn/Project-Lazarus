@@ -1,6 +1,5 @@
 #pragma once
-// Deliberately tiny test harness. Pulling in gtest/Catch for a few hundred
-// assertions wasn't worth the extra dependency and build time.
+// homemade test harness. gtest for a few hundred CHECKs wasn't worth the dependency
 
 #include <cstdio>
 #include <functional>

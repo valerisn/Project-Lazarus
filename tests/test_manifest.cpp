@@ -27,8 +27,8 @@ TEST_CASE("manifest: full manifest with builds and deps") {
                 "game_builds=ABCDEF12, 0011\nrequires=b, c, b\n",
                 m, e, w));
     CHECK_EQ(m.game_builds.size(), 2u);
-    CHECK_EQ(m.game_builds[0], "abcdef12");  // normalised to lowercase
-    CHECK_EQ(m.requires_.size(), 2u);        // duplicate b collapsed
+    CHECK_EQ(m.game_builds[0], "abcdef12");  // lowercased
+    CHECK_EQ(m.requires_.size(), 2u);        // b only counted once
 }
 
 TEST_CASE("manifest: corrupted / missing fields are errors") {

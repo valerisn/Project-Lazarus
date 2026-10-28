@@ -1,5 +1,4 @@
-# Pester 3.x tests (what ships with Windows PowerShell 5.1). Everything runs
-# against throwaway fake game folders in $TestDrive - never a real install.
+# pester 3 syntax (what windows ships). fake game folders in $TestDrive only
 
 $installer = Join-Path $PSScriptRoot '..\..\installer\Install-Lazarus.ps1'
 . $installer
@@ -30,7 +29,7 @@ function New-FakeSource([string]$root) {
     return $root
 }
 
-# path -> hash for every file, so we can prove nothing original changed
+# path -> hash, to prove nothing of the game changed
 function Get-Snapshot([string]$root) {
     $h = @{}
     Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
@@ -144,7 +143,7 @@ Describe 'Install and uninstall' {
         Test-Path (Join-Path $c.Game 'version.dll') | Should Be $false
     }
 
-    It 'keeps mods the user added themselves (security review #2)' {
+    It 'keeps mods the user added themselves' {
         $c = New-Case
         $SourceDir = $c.Src
         Invoke-Install $c.Game
@@ -152,7 +151,7 @@ Describe 'Install and uninstall' {
         New-Item -ItemType Directory -Force -Path $theirs | Out-Null
         Set-Content -LiteralPath (Join-Path $theirs 'mod.ini') -Value '[mod]' -Encoding ASCII
         Set-Content -LiteralPath (Join-Path $theirs 'cool.dll') -Value 'theirs' -Encoding ASCII
-        # runtime output that should go: logs, crash state, our mod's generated dump
+        # these should go
         Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\logs\lazarus.log') -Value 'log' -Encoding ASCII
         Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\state\quarantine.txt') -Value 'q' -Encoding ASCII
         Set-Content -LiteralPath (Join-Path $c.Game 'Lazarus\mods\graphics-settings\actions-Player.json') -Value '{}' -Encoding ASCII
@@ -179,7 +178,7 @@ Describe 'Install and uninstall' {
     }
 }
 
-Describe 'Manifest path validation (security review #3)' {
+Describe 'Manifest path validation' {
     It 'accepts our own paths' {
         Test-SafeRelPath 'version.dll' | Should Be $true
         Test-SafeRelPath 'Lazarus\mods\x\x.dll' | Should Be $true
@@ -216,7 +215,7 @@ Describe 'Interrupted install' {
     It 'can be uninstalled cleanly and reinstalled' {
         $c = New-Case
         $before = Get-Snapshot $c.Game
-        # what a crash after copying version.dll looks like
+        # looks like a crash right after copying version.dll
         Copy-Item (Join-Path $c.Src 'version.dll') (Join-Path $c.Game 'version.dll')
         Write-Manifest $c.Game @{ state = 'installing'; version = '9.9.9'
             files = @{ 'version.dll' = (Get-FileHashHex (Join-Path $c.Game 'version.dll')) }; backups = @{} }
@@ -229,7 +228,7 @@ Describe 'Interrupted install' {
             files = @{ 'version.dll' = (Get-FileHashHex (Join-Path $c.Game 'version.dll')) }; backups = @{} }
         Invoke-Install $c.Game
         (Read-Manifest $c.Game).state | Should Be 'installed'
-        # must not have "backed up" our own half-installed proxy as if it were foreign
+        # it shouldn't have backed up our own proxy like it was someone else's
         Test-Path (Join-Path $c.Game 'Lazarus\backup') | Should Be $false
     }
 }

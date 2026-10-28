@@ -1,6 +1,5 @@
-// Stand-in for UnityPlayer.dll. What matters is the import table: it pulls
-// VERSION.dll in statically (so our proxy gets loaded, same as the real
-// engine) and resolves il2cpp_* through its own GetProcAddress import.
+// fake UnityPlayer.dll. the import table is the point: VERSION.dll static
+// import (so the proxy loads) and il2cpp_* through its own GetProcAddress
 
 #include <windows.h>
 #include <d3d11.h>
@@ -17,9 +16,8 @@ using load_scene_t = void (*)(int, int);
 using get_value_t = int (*)();
 using state_t = int (*)(const char*);
 
-// Presents `n` real frames through a D3D11 swapchain on a hidden window, so
-// Present hooks get exercised against the actual dxgi.dll. WARP fallback
-// keeps it working on CI boxes without a GPU. Returns frames presented, or -1.
+// n real d3d11 presents on a hidden window, so the fps hook runs against real
+// dxgi. WARP for CI. -1 if no device
 static int render_frames(int n) {
     WNDCLASSEXW wc{sizeof wc};
     wc.lpfnWndProc = DefWindowProcW;
@@ -57,12 +55,12 @@ static int render_frames(int n) {
     return done;
 }
 
-// Writes key=value lines to `report` so the test runner can check them.
+// writes key=value lines for the runner to check
 extern "C" __declspec(dllexport) int fake_unity_main(const wchar_t* report_path) {
     FILE* r = _wfopen(report_path, L"w");
     if (!r) return 90;
 
-    // forwarding check: this goes through our proxy's export stub
+    // goes through our forwarding stub
     DWORD dummy = 0;
     DWORD vsize = GetFileVersionInfoSizeW(L"kernel32.dll", &dummy);
     std::fprintf(r, "version_forward=%d\n", vsize > 0 ? 1 : 0);
@@ -76,8 +74,7 @@ extern "C" __declspec(dllexport) int fake_unity_main(const wchar_t* report_path)
     auto state = reinterpret_cast<state_t>(GetProcAddress(ga, "fake_state"));
     if (!init || !shutdown || !load_scene || !get_value || !state) return 92;
 
-    // if the proxy did its job, the il2cpp_init we got lives in version.dll,
-    // not GameAssembly.dll
+    // if the hook worked, this il2cpp_init lives in version.dll
     HMODULE owner = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(init), &owner);
@@ -94,14 +91,14 @@ extern "C" __declspec(dllexport) int fake_unity_main(const wchar_t* report_path)
     auto meddle = reinterpret_cast<void (*)()>(GetProcAddress(ga, "fake_game_meddle"));
     std::fprintf(r, "value_before_scene=%d\n", get_value());
     load_scene(1, 0);  // MainMenu, single
-    meddle();          // game resets fps/vsync behind everyone's back
+    meddle();          // game messes with fps/vsync
     load_scene(2, 1);  // Prison, additive
     load_scene(1, 0);  // back to MainMenu, single
     std::fprintf(r, "frames_rendered=%d\n", render_frames(60));
     auto frame = reinterpret_cast<void (*)()>(GetProcAddress(ga, "fake_engine_frame"));
     for (int i = 0; i < 5; ++i) {
         frame();
-        Sleep(5);  // give the test mod's background thread a chance to queue work
+        Sleep(5);
     }
     std::fprintf(r, "notify_calls=%d\n", state("notify_calls"));
     std::fprintf(r, "scene_listener_calls=%d\n", state("scene_listener"));

@@ -1,5 +1,4 @@
-# Writes SHA256SUMS.txt for every file in a folder (relative paths, sha256sum format)
-# so people can check a download against what CI built.
+# SHA256SUMS.txt for a folder, sha256sum format, so people can check downloads
 #   pwsh scripts/checksums.ps1 build/dist [out-file]
 param(
     [Parameter(Mandatory)] [string]$Dir,

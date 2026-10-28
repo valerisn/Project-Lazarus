@@ -1,5 +1,4 @@
-# the only external dependencies are GitHub Actions (MinHook is vendored),
-# so that's all dependabot needs to watch. it bumps the pinned SHAs.
+# actions are the only outside deps, minhook is vendored
 version: 2
 updates:
   - package-ecosystem: github-actions

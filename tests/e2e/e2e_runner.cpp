@@ -1,7 +1,5 @@
-// End-to-end test runner. Lives in the staged "game folder" next to
-// fake_game.exe / UnityPlayer.dll / GameAssembly.dll / version.dll (the real
-// proxy) and launches the fake game once per scenario, since the proxy's
-// DllMain only runs once per process.
+// e2e runner. sits in the fake game folder and starts fake_game.exe once per
+// scenario - DllMain only runs once per process so each one needs a fresh one
 
 #include <windows.h>
 
@@ -89,7 +87,7 @@ Run launch(const wchar_t* env_safe_mode = nullptr) {
 
     std::istringstream rep(slurp(g_stage / "report.txt"));
     for (std::string line; std::getline(rep, line);) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();  // fake engine writes in text mode
+        if (!line.empty() && line.back() == '\r') line.pop_back();  // fake engine writes text mode, so \r\n
         auto eq = line.find('=');
         if (eq != std::string::npos) run.report[line.substr(0, eq)] = line.substr(eq + 1);
     }
@@ -128,7 +126,7 @@ int wmain() {
         auto run = launch();
         expect(run.exit_code == 0, "exit code " + std::to_string(run.exit_code));
         expect(run.r("version_forward") == "1", "version.dll exports forward to System32");
-        // loader keeps the import's spelling, so this comes back as VERSION.dll
+        // windows keeps the import's spelling, so it's VERSION.dll
         expect(_stricmp(run.r("init_owner").c_str(), "version.dll") == 0,
                "il2cpp_init intercepted, owner=" + run.r("init_owner"));
         expect(run.r("real_init_called") == "1", "real il2cpp_init still runs");
@@ -149,7 +147,7 @@ int wmain() {
         expect(run.has("startup complete: 1 mod(s) active"), "startup summary");
         expect(run.has("shutdown complete"), "shutdown log");
 
-        // v2: frame tick, main-thread queue, commands
+        // api v2 stuff
         expect(run.r("notify_calls") == "10", "engine pumped input twice per frame: " + run.r("notify_calls"));
         expect(run.has("frame tick hooked (input: yes"), "tick hook");
         expect(run.has("v2 update callbacks: 5"), "on_update gated to once per frame (5 frames, 10 pumps)");
@@ -159,9 +157,8 @@ int wmain() {
         expect(run.has("command 'test.crash' crashed (exception 0xC0000005)"), "crashing command contained");
         expect(run.has("could not register command 'help'"), "can't steal another owner's command");
 
-        // regression from the first live run: some non-Unity process in the
-        // game folder (crash handler) loaded the proxy after exit and wiped
-        // bootstrap.log. this runner isn't a Unity process either.
+        // the crash handler wiped bootstrap.log on the first real run. this
+        // runner isn't a unity process either, so it can stand in for it
         HMODULE proxy = LoadLibraryW((g_stage / "version.dll").c_str());
         expect(proxy != nullptr, "proxy loads in a non-Unity process");
         expect(slurp(lz() / "logs" / "bootstrap.log") == run.bootstrap, "non-Unity process left bootstrap.log alone");
@@ -247,7 +244,7 @@ int wmain() {
         expect(run.has("skipping test-mod: quarantined"), "skip reason");
         expect(slurp(lz() / "state" / "quarantine.txt").find("test-mod |") != std::string::npos, "quarantine file");
 
-        // user deletes quarantine.txt -> mod loads again
+        // delete quarantine.txt, mod comes back
         fs::remove(lz() / "state" / "quarantine.txt");
         reset(true);
         configure(kEnabled, "normal");
@@ -275,7 +272,7 @@ int wmain() {
         auto run = launch();
         expect(run.r("finished") == "1", "game finished");
         expect(run.r("quality") == "2", "quality level " + run.r("quality"));
-        // SetQualityLevel resets vsync+lod to the preset, mod must apply its values after
+        // SetQualityLevel resets vsync+lod, the mod has to set those after
         expect(run.r("vsync") == "0", "vsync stays off after preset switch and game meddling: " + run.r("vsync"));
         expect(run.r("lod_x100") == "150", "lod bias " + run.r("lod_x100"));
         expect(run.r("target_frame_rate") == "144", "fps cap restored after meddling: " + run.r("target_frame_rate"));
@@ -320,7 +317,7 @@ int wmain() {
         expect(run.r("finished") == "1", "game finished");
         expect(run.r("frames_rendered") == "60", "fake engine presented 60 frames: " + run.r("frames_rendered"));
         expect(run.has("present hook(s)"), "hooks installed");
-        // 60 real presents; the DXGI_PRESENT_TEST call must not count
+        // 60 real presents, the PRESENT_TEST one shouldn't count
         expect(run.has("frames presented this session: 60"), "exact frame count");
         expect(run.has("startup complete: 2 mod(s) active"), "both mods active together");
         expect(run.r("target_frame_rate") == "45", "graphics-settings still applied alongside it");
@@ -329,7 +326,7 @@ int wmain() {
 
     scenario("dev-console: build pin override, autoexec routes commands, output mirrored to log", [] {
         reset(false);
-        // dev-console is pinned to the real game build; the fake engine isn't it
+        // dev-console is pinned to the real build, which this obviously isn't
         configure("[loader]\nignore_build_check = true\n[mods]\nenabled = dev-console, test-mod\n", "normal");
         spit(lz() / "mods" / "dev-console" / "config.ini",
              "[autoexec]\ncommands = echo autoexec says hi; test.echo \"a b\"; mods; nonsense\n"
@@ -347,10 +344,10 @@ int wmain() {
         dump_on_fail(run);
     });
 
-    scenario("user profile path is redacted from lazarus.log (security review #5)", [] {
+    scenario("user profile path is redacted from lazarus.log", [] {
         reset(false);
         configure(kEnabled, "normal");
-        // pretend the game lives under the user's profile, like a default Steam library would
+        // pretend the game's under the user profile (default steam library)
         wchar_t old[MAX_PATH] = {};
         DWORD had = GetEnvironmentVariableW(L"USERPROFILE", old, MAX_PATH);
         SetEnvironmentVariableW(L"USERPROFILE", g_stage.parent_path().c_str());

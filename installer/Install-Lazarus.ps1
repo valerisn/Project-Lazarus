@@ -36,15 +36,14 @@ Set-StrictMode -Version 2
 $script:AppId = '2192790'
 $script:ExeName = 'The Walking Dead Destinies.exe'
 $script:ExpectedUnity = '2021.3.17'
-# SHA-256 prefixes of GameAssembly.dll for builds Lazarus was checked against.
-# keep in sync with kKnownBuilds in src/core/state.cpp
+# same list as kKnownBuilds in src/core/state.cpp, update both
 $script:KnownBuilds = @{ '1b579b75b1486c0e' = 'Steam build 12839205 (December 2023 release)' }
 $script:ManifestName = 'install-manifest.txt'
-# user-editable files: never overwritten on reinstall
+# the user edits these, reinstall leaves them alone
 $script:UserFiles = @('Lazarus\lazarus.ini', 'Lazarus\mods\*\config.ini')
-# folders under Lazarus\ that only the loader writes to (cleared on uninstall)
+# only the loader writes in here
 $script:RuntimeDirs = @('logs', 'state', 'backup')
-# files our mods write into their own folder at runtime (key-rebind's action dumps)
+# key-rebind writes these next to itself
 $script:GeneratedFiles = @('actions-*.json')
 
 class LazarusError : System.Exception {
@@ -69,7 +68,7 @@ function Get-SteamRoot {
     return $null
 }
 
-# libraryfolders.vdf is Valve's KeyValues format; we only need the "path" lines
+# libraryfolders.vdf is valve KeyValues. not parsing all that, we just want the "path" lines
 function Get-SteamLibraries([string]$root) {
     $libs = New-Object System.Collections.Generic.List[string]
     if (-not $root) { return $libs }
@@ -96,7 +95,7 @@ function Find-InSteamLibraries {
                 if (Test-Path -LiteralPath (Join-Path $dir $script:ExeName)) { $found.Add($dir) }
             }
         }
-        # manifest can be missing (moved library, manual copy) - check common\ directly too
+        # no appmanifest after a manual copy or moved library, so look in common\ too
         $common = Join-Path $apps 'common'
         if (Test-Path -LiteralPath $common) {
             Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue | ForEach-Object {
@@ -109,17 +108,14 @@ function Find-InSteamLibraries {
     return $found
 }
 
-# last resort: shallow walk of every fixed drive. depth 4 covers things like
-# D:\Games\TWD\The Walking Dead Destinies.exe without crawling all of C:\
+# last resort, walk every drive 4 levels deep. enough for D:\Games\TWD\<exe>
 function Find-OnDrives([int]$MaxDepth = 4) {
     $found = New-Object System.Collections.Generic.List[string]
-    # these trees are enormous and never hold a game install. the first
-    # version of this scan didn't skip them and took 5 minutes on a dev box.
+    # huge and never have games in them. without this the scan took 5 minutes
     $skip = @('Windows', '$Recycle.Bin', 'System Volume Information', 'ProgramData', 'Recovery', 'AppData',
         'WindowsApps', 'node_modules', '.git', 'Microsoft', 'Windows Kits', 'Microsoft Visual Studio')
     $sys = $env:SystemDrive.TrimEnd('\') + '\'
-    # other drives first: a game on a custom path is almost always on a
-    # secondary drive, and C:\ is the slowest to walk
+    # C:\ last, custom installs are usually on another drive and C:\ is the slow one
     $drives = @(Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Z]:\\$' -and $_.Free -ne $null } |
         Sort-Object @{ Expression = { $_.Root -eq $sys } }, Root)
     foreach ($d in $drives) {
@@ -167,9 +163,8 @@ function Resolve-GameDir {
 
 # ----------------------------------------------------------------- validation
 
-# plain .NET instead of Get-FileHash: when Windows PowerShell is started from
-# pwsh 7 it inherits pwsh's PSModulePath and Get-FileHash just isn't there.
-# found that one the hard way on CI.
+# not Get-FileHash: started from pwsh 7, windows powershell picks up pwsh's
+# PSModulePath and Get-FileHash just doesn't exist. CI found that one
 function Get-FileHashHex([string]$file) {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -181,7 +176,7 @@ function Get-FileHashHex([string]$file) {
 
 function Get-Fingerprint([string]$file) { (Get-FileHashHex $file).Substring(0, 16) }
 
-# returns a list of warnings; throws on anything that makes install impossible
+# warnings come back, real problems throw
 function Test-GameDir([string]$dir) {
     $warn = New-Object System.Collections.Generic.List[string]
     $data = Join-Path $dir 'The Walking Dead Destinies_Data'
@@ -223,10 +218,8 @@ function Test-GameDir([string]$dir) {
 
 function Get-ManifestPath([string]$dir) { Join-Path $dir "Lazarus\$($script:ManifestName)" }
 
-# The manifest decides what uninstall deletes and what it copies over
-# version.dll, so a path in it has to stay inside our own footprint: exactly
-# version.dll, or something under Lazarus\. no rooted paths, no drive letters,
-# no ..\ climbing out. (security review #3)
+# the manifest decides what uninstall deletes and what gets copied over
+# version.dll, so don't trust it: version.dll or under Lazarus\, nothing else
 function Test-SafeRelPath([string]$rel, [string]$under = $null) {
     if (-not $rel -or [System.IO.Path]::IsPathRooted($rel) -or $rel.Contains(':')) { return $false }
     foreach ($part in ($rel -split '[\\/]')) {
@@ -269,7 +262,7 @@ function Write-Manifest([string]$dir, $m) {
     foreach ($k in ($m.backups.Keys | Sort-Object)) { $lines += "backup=$k|$($m.backups[$k])" }
     $p = Get-ManifestPath $dir
     New-Item -ItemType Directory -Force -Path (Split-Path $p) | Out-Null
-    # write-then-rename so a crash mid-write can't leave a half manifest
+    # write then rename, no half-written manifests
     Set-Content -LiteralPath "$p.tmp" -Value $lines -Encoding UTF8
     Move-Item -LiteralPath "$p.tmp" -Destination $p -Force
 }
@@ -297,7 +290,6 @@ function Invoke-Install([string]$dir) {
         Write-Step 'A previous install was interrupted; finishing it now.'
     }
 
-    # what we're about to put in place, relative to the game dir
     $plan = New-Object System.Collections.Generic.List[string]
     $plan.Add('version.dll')
     $lzSrc = Join-Path $src 'Lazarus'
@@ -305,7 +297,7 @@ function Invoke-Install([string]$dir) {
         $plan.Add('Lazarus\' + $_.FullName.Substring($lzSrc.Length).TrimStart('\'))
     }
 
-    # foreign version.dll (another mod/tool) -> back it up rather than clobber it
+    # someone else's version.dll, back it up
     $target = Join-Path $dir 'version.dll'
     if ((Test-Path -LiteralPath $target) -and -not $m.files.ContainsKey('version.dll')) {
         $backupRel = 'Lazarus\backup\version.dll.orig'
@@ -337,7 +329,7 @@ function Invoke-Install([string]$dir) {
             Fail "Could not write $to ($($_.Exception.Message)). Close the game if it is running and try again."
         }
         $m.files[$rel] = Get-FileHashHex $to
-        # record progress as we go so an interrupted install can be cleanly undone
+        # after every file, so a half-done install can still be undone
         Write-Manifest $dir $m
     }
     foreach ($d in 'logs', 'state') { New-Item -ItemType Directory -Force -Path (Join-Path $dir "Lazarus\$d") | Out-Null }
@@ -354,7 +346,7 @@ function Invoke-Uninstall([string]$dir) {
         Fail "Project Lazarus does not appear to be installed in $dir."
     }
 
-    # only delete version.dll if it's still the one we put there
+    # only if it's still ours
     $vd = Join-Path $dir 'version.dll'
     if ($m.files.ContainsKey('version.dll') -and (Test-Path -LiteralPath $vd)) {
         if ((Get-FileHashHex $vd) -ne $m.files['version.dll'] -and -not $Force) {
@@ -373,9 +365,8 @@ function Invoke-Uninstall([string]$dir) {
         }
     }
 
-    # Only what we put there, plus what Lazarus itself writes at runtime.
-    # This used to be Remove-Item Lazarus -Recurse, which also took out any
-    # mod the user had installed on their own (security review #2).
+    # used to just Remove-Item the whole Lazarus folder, which also nuked any
+    # mod the user put there themselves. now it's only our stuff
     $lz = Join-Path $dir 'Lazarus'
     foreach ($rel in @($m.files.Keys)) {
         if ($rel -eq 'version.dll') { continue }
@@ -383,14 +374,13 @@ function Invoke-Uninstall([string]$dir) {
         $p = Join-Path $dir $rel
         if (Test-Path -LiteralPath $p -PathType Leaf) { Remove-Item -LiteralPath $p -Force }
     }
-    # runtime output: flat folders, so no recursive delete needed (or wanted)
+    # flat folders, no need for -Recurse
     foreach ($d in $script:RuntimeDirs) {
         $p = Join-Path $lz $d
         if (Test-Path -LiteralPath $p -PathType Container) {
             Get-ChildItem -LiteralPath $p -File -Force | Remove-Item -Force
         }
     }
-    # files our own mods generate next to themselves (only in folders we installed)
     $ourModDirs = @($m.files.Keys | Where-Object { $_ -like 'Lazarus\mods\*\*' } |
         ForEach-Object { Split-Path (Join-Path $dir $_) } | Select-Object -Unique)
     foreach ($md in $ourModDirs) {
@@ -401,8 +391,7 @@ function Invoke-Uninstall([string]$dir) {
     $mf = Get-ManifestPath $dir
     if (Test-Path -LiteralPath $mf) { Remove-Item -LiteralPath $mf -Force }
 
-    # drop folders that ended up empty, deepest first. a folder with anything
-    # left in it (someone else's mod) stays.
+    # empty folders go, deepest first. anything with someone else's files stays
     if (Test-Path -LiteralPath $lz) {
         $dirs = @(Get-ChildItem -LiteralPath $lz -Directory -Recurse -Force | Sort-Object { $_.FullName.Length } -Descending)
         foreach ($d in ($dirs + (Get-Item -LiteralPath $lz))) {
@@ -498,5 +487,5 @@ function Main {
     }
 }
 
-# dot-sourcing (tests) just loads the functions
+# the tests dot-source this, don't run Main then
 if ($MyInvocation.InvocationName -ne '.') { exit (Main) }

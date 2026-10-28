@@ -115,16 +115,16 @@ TEST_CASE("plan: invalid manifests and duplicate ids") {
     auto dup = mk("a");
     dup.folder = "a-copy";
     auto p = plan_load({mk("a"), dup, broken, mk("ok")}, cfg_enabled({"a", "broken", "ok"}), {});
-    // duplicate id: neither loads, unrelated mods are unaffected
+    // dup id: neither loads, ok still does
     CHECK(order(p) == std::vector<std::string>{"ok"});
     CHECK(reason(p, "broken").find("missing dll") != std::string::npos);
     CHECK(reason(p, "a").find("more than one installed mod claims this id") != std::string::npos);
 }
 
-TEST_CASE("plan: decoy folder can't hijack an enabled id (security review #1)") {
+TEST_CASE("plan: decoy folder can't hijack an enabled id") {
     TempDir td;
     auto mods = td.path / "mods";
-    // sorts before the real folder and claims its id
+    // sorts before the real folder and claims the same id
     write_file(mods / "aaa-graphics-pack" / "mod.ini", "[mod]\nid=graphics-settings\ndll=evil.dll\napi_version=1\n");
     write_file(mods / "graphics-settings" / "mod.ini", "[mod]\nid=graphics-settings\ndll=gfx.dll\napi_version=1\n");
     std::vector<std::string> w;
@@ -158,7 +158,7 @@ TEST_CASE("discover: scans folders, ignores junk, reports bad manifests") {
     for (auto& f : found) {
         if (f.folder == "good") CHECK(f.valid);
         if (f.folder == "bad") CHECK(!f.valid && f.errors.size() >= 2);
-        if (f.folder == "Renamed") CHECK(!f.valid && f.errors.size() == 1);  // folder must equal id now
+        if (f.folder == "Renamed") CHECK(!f.valid && f.errors.size() == 1);  // folder != id is an error now
     }
 }
 

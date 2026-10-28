@@ -1,4 +1,4 @@
-# Configure, build and test. Run from anywhere:
+# configure + build + test, works from any dir:
 #   powershell -ExecutionPolicy Bypass -File scripts\build.ps1 [-Config Release] [-NoTest]
 param(
     [ValidateSet('Debug', 'Release')] [string]$Config = 'Release',
