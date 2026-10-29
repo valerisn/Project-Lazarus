@@ -33,6 +33,11 @@ struct Cfg {
     std::string autoexec_scene = "Main Menu";
     int autoexec_delay = 120;
     std::string autoexec;
+    // second stage: once you're actually in a level (main menu stage has
+    // usually just kicked off the load, so "give rifle" there would be wasted)
+    std::string level_scene;
+    std::string level_commands;
+    int level_delay = 300;
     bool unlock_cursor = true;
 } cfg;
 
@@ -331,28 +336,52 @@ DWORD WINAPI ui_thread(LPVOID) {
 int g_countdown = -1;
 bool g_autoexec_done = false;
 
-void on_scene(void*, const char* name, int, int) {
-    if (g_autoexec_done || cfg.autoexec.empty()) return;
-    if (_stricmp(name, cfg.autoexec_scene.c_str()) != 0) return;
-    g_countdown = cfg.autoexec_delay;
-    api->log(self, LAZARUS_LOG_INFO, "autoexec: '%s' loaded, running in %d frames", name, cfg.autoexec_delay);
+int g_level_countdown = -1;
+bool g_level_done = false;
+
+std::string lower(std::string v) {
+    for (auto& c : v) c = (char)tolower((unsigned char)c);
+    return v;
 }
 
-void on_update(void*) {
-    if (g_countdown < 0 || --g_countdown > 0) return;
-    g_countdown = -1;
-    g_autoexec_done = true;  // once, or "load X" from the main menu loops forever
-    std::string all = cfg.autoexec;
+void run_commands(const std::string& all, const char* prefix) {
     size_t start = 0;
     while (start <= all.size()) {
         size_t semi = all.find(';', start);
         if (semi == std::string::npos) semi = all.size();
         std::string cmd = all.substr(start, semi - start);
-        if (cmd.find_first_not_of(" \t") != std::string::npos) {
-            print_line(nullptr, ("autoexec> " + cmd).c_str());
+        if (cmd.find_first_not_of(" 	") != std::string::npos) {
+            print_line(nullptr, (std::string(prefix) + cmd).c_str());
             api->execute_command(cmd.c_str(), &print_line, nullptr);
         }
         start = semi + 1;
+    }
+}
+
+void on_scene(void*, const char* name, int, int) {
+    if (!g_autoexec_done && !cfg.autoexec.empty() && _stricmp(name, cfg.autoexec_scene.c_str()) == 0) {
+        g_countdown = cfg.autoexec_delay;
+        api->log(self, LAZARUS_LOG_INFO, "autoexec: '%s' loaded, running in %d frames", name, cfg.autoexec_delay);
+    }
+    // substring match: levels are a pile of scenes (Level/Gameplay/Lighting),
+    // any of them showing up means we're in
+    if (!g_level_done && !cfg.level_commands.empty() && !cfg.level_scene.empty() && g_level_countdown < 0 &&
+        lower(name).find(lower(cfg.level_scene)) != std::string::npos) {
+        g_level_countdown = cfg.level_delay;
+        api->log(self, LAZARUS_LOG_INFO, "autoexec: in level ('%s'), level commands in %d frames", name, cfg.level_delay);
+    }
+}
+
+void on_update(void*) {
+    if (g_countdown >= 0 && --g_countdown <= 0) {
+        g_countdown = -1;
+        g_autoexec_done = true;  // once, or "load X" from the main menu loops forever
+        run_commands(cfg.autoexec, "autoexec> ");
+    }
+    if (g_level_countdown >= 0 && --g_level_countdown <= 0) {
+        g_level_countdown = -1;
+        g_level_done = true;
+        run_commands(cfg.level_commands, "autoexec(level)> ");
     }
 }
 
@@ -401,6 +430,10 @@ extern "C" __declspec(dllexport) int lazarus_mod_init(LazarusMod* m, const Lazar
     if (a->config_get_string(m, "autoexec", "commands", buf, sizeof buf)) cfg.autoexec = buf;
     if (a->config_get_string(m, "autoexec", "after_scene", buf, sizeof buf) && buf[0]) cfg.autoexec_scene = buf;
     cfg.autoexec_delay = (int)a->config_get_int(m, "autoexec", "delay_frames", 120);
+    if (a->config_get_string(m, "autoexec", "in_level", buf, sizeof buf)) cfg.level_scene = buf;
+    if (a->config_get_string(m, "autoexec", "level_commands", buf, sizeof buf)) cfg.level_commands = buf;
+    cfg.level_delay = (int)a->config_get_int(m, "autoexec", "level_delay_frames", 300);
+    if (cfg.level_delay < 1) cfg.level_delay = 1;
     if (cfg.autoexec_delay < 1) cfg.autoexec_delay = 1;
 
     if (il2_ok) con::register_all(a, m);
