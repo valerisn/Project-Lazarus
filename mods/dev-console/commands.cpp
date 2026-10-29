@@ -95,6 +95,57 @@ std::vector<Collection> collections(const Out& out) {
     return list;
 }
 
+// the game's own master list of levels (MomentSystem.GlobalMoments). unlike
+// FindObjectsOfTypeAll this doesn't care what happens to be loaded right now,
+// which is what makes loading from the main menu possible
+std::vector<Collection> global_levels(const Out& out) {
+    std::vector<Collection> list;
+    il2::Klass* ms = il2::find_class("Lucille.Moment.MomentSystem", "Lucille.MomentSystem.dll");
+    if (!ms) return list;
+    std::string err;
+    il2::Obj* g = il2::invoke(il2::find_method(ms, "get_GlobalMoments", 0), nullptr, nullptr, err);
+    if (!g) {
+        if (!err.empty()) out("GlobalMoments threw: " + err);
+        return list;
+    }
+    auto items = il2::elements(g);
+    if (items.empty()) {
+        // not a list itself? then it's a wrapper object, look for the list inside
+        for (const char* f : {"_globalMoments", "globalMoments", "_items", "items", "moments", "_moments"})
+            if (il2::Obj* inner = il2::ref_field(g, f)) {
+                items = il2::elements(inner);
+                if (!items.empty()) break;
+            }
+    }
+    for (il2::Obj* it : items)
+        if (il2::Obj* sc = il2::ref_field(it, "SceneCollection")) list.push_back({sc, il2::object_name(sc)});
+    if (list.empty()) out("couldn't read the level list (GlobalMoments is a " + il2::class_name(il2::class_of(g)) + ")");
+    return list;
+}
+
+std::vector<Collection*> match(std::vector<Collection>& list, const std::string& q) {
+    std::vector<Collection*> hits;
+    std::string lq = lower(q);
+    for (auto& c : list)
+        if (lower(c.name) == lq) return {&c};
+    for (auto& c : list)
+        if (lower(c.name).find(lq) != std::string::npos) hits.push_back(&c);
+    return hits;
+}
+
+const char* kCheatItems[] = {"Bottle", "FlashBang", "HandmadeGrenade", "GrenadeMilitary", "Medicine", "StressPills",
+                             "SurgeryMedicine", "Bat", "FireAxe", "Sledgehammer", "Machete", "Katana", "Crowbar",
+                             "Colt", "Rifle", "Crossbow", "Pistol", "Sniper", "Shotgun"};
+
+il2::Obj* inventory_manager() {
+    il2::Klass* k = il2::find_class("Lucille.InventorySystem.InventoryManager", "Lucille.InventorySystem.dll");
+    if (!k) return nullptr;
+    if (il2::Obj* o = il2::static_field(k, "instance")) return o;
+    std::string err;
+    auto all = il2::find_in_scenes(k, err);
+    return all.empty() ? nullptr : all[0];
+}
+
 // call a cheats method (0 or 1 int arg), then print the matching getter if given
 bool cheat_call(const Out& out, const char* method, const char* getter = nullptr, int* int_arg = nullptr) {
     il2::Obj* inst = cheats_instance(out);
@@ -205,8 +256,14 @@ void register_all(const LazarusApi* a, LazarusMod* m) {
                 for (auto& c : list)
                     if (lower(c.name).find(lq) != std::string::npos) hits.push_back(&c);
         }
+        // nothing loaded by that name (main menu, usually) -> the global level list
+        std::vector<Collection> global;
+        if (hits.empty() && q[0] != '#') {
+            global = global_levels(out);
+            hits = match(global, q);
+        }
         if (hits.empty()) {
-            out("no collection matches '" + q + "' (" + std::to_string(list.size()) + " in memory, see 'collections')");
+            out("no collection matches '" + q + "' (" + std::to_string(list.size()) + " in memory, see 'collections'/'levels')");
             return;
         }
         if (hits.size() > 1) {
@@ -222,6 +279,119 @@ void register_all(const LazarusApi* a, LazarusMod* m) {
         } else {
             out("Load() threw: " + err);
         }
+    });
+
+    reg("levels", "the game's full level list, works from the main menu [filter]", [](auto& args, auto& out) {
+        auto list = global_levels(out);
+        std::string f = args.size() > 1 ? lower(args[1]) : "";
+        int shown = 0;
+        for (size_t i = 0; i < list.size(); ++i)
+            if (f.empty() || lower(list[i].name).find(f) != std::string::npos) {
+                out("#" + std::to_string(i) + "  " + list[i].name);
+                ++shown;
+            }
+        out(std::to_string(shown) + " of " + std::to_string(list.size()) + " level(s)");
+    });
+
+    reg("start", "start a level as a new game (works from the main menu): start <name part>", [](auto& args, auto& out) {
+        if (args.size() < 2) return out("usage: start <name part>   e.g. start TooFarGone");
+        auto list = global_levels(out);
+        auto hits = match(list, args[1]);
+        if (hits.empty()) {
+            auto mem = collections(out);
+            list.insert(list.end(), mem.begin(), mem.end());
+            hits = match(list, args[1]);
+        }
+        if (hits.empty()) return out("no level matches '" + args[1] + "', see 'levels'");
+        if (hits.size() > 1) {
+            out("'" + args[1] + "' matches several:");
+            for (auto* h : hits) out("  " + h->name);
+            return;
+        }
+        Collection* c = hits[0];
+        il2::Klass* ms = il2::find_class("Lucille.Moment.MomentSystem", "Lucille.MomentSystem.dll");
+        il2::Method* m = ms ? il2::find_method(ms, "LoadLevel", 2) : nullptr;
+        std::string err, cls;
+        int t0 = m ? il2::param_type(m, 0, &cls) : -1;
+        int t1 = m ? il2::param_type(m, 1) : -1;
+        // the game's own path: LoadLevel(collection, isNewGame=true). this is
+        // what sets up a playthrough, which a bare Load() from the menu skips.
+        // param shapes checked at runtime because the metadata only has names
+        if (m && t1 == 0x02 && (t0 == 0x12 || t0 == 0x1c || t0 == 0x0e)) {
+            bool is_new = true;
+            void* p0 = t0 == 0x0e ? il2::new_string(c->name) : c->obj;
+            void* params[] = {p0, &is_new};
+            api->log(self, LAZARUS_LOG_INFO, "start: MomentSystem.LoadLevel(%s %s, true)", cls.c_str(), c->name.c_str());
+            il2::invoke(m, nullptr, params, err);
+            if (err.empty()) return out("starting " + c->name + " as a new game ...");
+            out("LoadLevel threw (" + err + "), falling back to a plain load");
+        } else {
+            out("MomentSystem.LoadLevel isn't the shape we expected (" + std::to_string(t0) + "/" + std::to_string(t1) +
+                "), falling back to a plain load");
+        }
+        err.clear();
+        il2::invoke(il2::find_method(il2::class_of(c->obj), "Load", 0), c->obj, nullptr, err);
+        out(err.empty() ? "loading " + c->name + " ..." : "Load() threw: " + err);
+    });
+
+    reg("items", "item names the game knows [filter] (for 'give')", [](auto& args, auto& out) {
+        il2::Obj* im = inventory_manager();
+        if (!im) return out("no InventoryManager yet - try from inside a level");
+        std::string err;
+        il2::Obj* cfg = il2::invoke(il2::find_method(il2::class_of(im), "get_Config", 0), im, nullptr, err);
+        il2::Obj* pool = cfg ? il2::invoke(il2::find_method(il2::class_of(cfg), "get_ItemsPool", 0), cfg, nullptr, err) : nullptr;
+        if (!pool) return out("couldn't get the item pool" + (err.empty() ? std::string() : ": " + err));
+        auto names = il2::struct_strings(pool, "ItemName");
+        if (names.empty())
+            for (il2::Obj* e : il2::elements(pool))
+                if (il2::Obj* s = il2::ref_field(e, "ItemName")) names.push_back(il2::to_utf8(s));
+        std::string f = args.size() > 1 ? lower(args[1]) : "";
+        std::vector<std::string> shown;
+        for (auto& n : names)
+            if (f.empty() || lower(n).find(f) != std::string::npos) shown.push_back(n);
+        print_lines(out, shown, 300);
+        out(std::to_string(shown.size()) + " item(s). cheat shortcuts: rifle shotgun pistol colt sniper crossbow katana machete bat ...");
+    });
+
+    reg("give", "give yourself an item: give <name> [amount]  (rifle, shotgun... or see 'items')", [](auto& args, auto& out) {
+        if (args.size() < 2) return out("usage: give <name> [amount]");
+        int amount = args.size() > 2 ? std::atoi(args[2].c_str()) : 1;
+        if (amount < 1) amount = 1;
+        // the devs' cheat equips straight into your hands, so prefer it when the
+        // cheat object exists. otherwise go through the inventory's test hook
+        for (const char* name : kCheatItems) {
+            if (lower(name) != lower(args[1])) continue;
+            il2::Klass* ck = cheats_class();
+            il2::Obj* inst = ck ? il2::static_field(ck, "instance") : nullptr;
+            if (inst) {
+                std::string method = std::string("Change") + name + "Weapon";
+                if (cheat_call(out, method.c_str())) return;
+            }
+            break;
+        }
+        il2::Obj* im = inventory_manager();
+        if (!im) return out("no InventoryManager yet - try from inside a level");
+        il2::Method* m = il2::find_method(il2::class_of(im), "TestAddItem", 2);
+        if (!m) return out("InventoryManager.TestAddItem isn't in this build");
+        int t0 = il2::param_type(m, 0);
+        std::string err;
+        int32_t n = amount;
+        int64_t id = 0;
+        void* p0 = nullptr;
+        if (t0 == 0x0e) p0 = il2::new_string(args[1]);
+        else if (t0 >= 0x04 && t0 <= 0x0b) {
+            char* end = nullptr;
+            id = std::strtoll(args[1].c_str(), &end, 10);
+            if (*end) return out("TestAddItem wants a numeric id in this build, not a name");
+            p0 = &id;
+        } else {
+            return out("TestAddItem takes a type I don't know how to build (" + std::to_string(t0) + ")");
+        }
+        void* params[] = {p0, &n};
+        api->log(self, LAZARUS_LOG_INFO, "give: TestAddItem(%s, %d)", args[1].c_str(), amount);
+        il2::invoke(m, im, params, err);
+        out(err.empty() ? "added " + std::to_string(amount) + "x " + args[1] + " (if nothing shows up, check the exact name with 'items')"
+                        : "TestAddItem threw: " + err);
     });
 
     reg("scenes", "list currently loaded Unity scenes", [](auto&, auto& out) {
