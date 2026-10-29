@@ -53,4 +53,14 @@ std::vector<Obj*> find_in_scenes(Klass* k, std::string& err);
 // found out the logos were VideoPlayers
 std::vector<std::string> census(std::string& err);
 
+// every instance field as "name = value", own class first then base classes,
+// stopping at unity's own types. false if the type info exports are missing
+bool describe(Obj* o, std::vector<std::string>& out);
+
+// call an instance method by name, args parsed from text into whatever the
+// method actually takes (bool/int/enum/string). returns false + err if it
+// can't, otherwise result is a printable summary of the return value
+bool call_with_args(Obj* o, const std::string& method, const std::vector<std::string>& args, std::string& result,
+                    std::string& err);
+
 }  // namespace il2

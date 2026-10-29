@@ -120,6 +120,40 @@ bool cheat_call(const Out& out, const char* method, const char* getter = nullptr
     return true;
 }
 
+// "Ns.Class" or "Ns.Class#2" -> that live scene object. lists them when there's
+// more than one and you didn't pick, since guessing wrong here is confusing
+il2::Obj* live_object(const std::string& spec, size_t& idx, const Out& out) {
+    std::string cls = spec;
+    idx = 0;
+    bool picked = false;
+    auto hash = spec.rfind('#');
+    if (hash != std::string::npos) {
+        cls = spec.substr(0, hash);
+        idx = (size_t)std::atoi(spec.c_str() + hash + 1);
+        picked = true;
+    }
+    il2::Klass* k = il2::find_class(cls.c_str());
+    if (!k) {
+        out("class " + cls + " not found");
+        return nullptr;
+    }
+    std::string err;
+    auto objs = il2::find_in_scenes(k, err);
+    if (objs.empty()) {
+        out("no live " + cls + " in the loaded scenes" + (err.empty() ? "" : " (" + err + ")"));
+        return nullptr;
+    }
+    if (idx >= objs.size()) {
+        out("only " + std::to_string(objs.size()) + " of those, #0-#" + std::to_string(objs.size() - 1));
+        return nullptr;
+    }
+    if (objs.size() > 1 && !picked) {
+        out(std::to_string(objs.size()) + " of those, using #0. pick one with " + cls + "#n:");
+        for (size_t i = 0; i < objs.size() && i < 10; ++i) out("  #" + std::to_string(i) + " on '" + il2::object_name(objs[i]) + "'");
+    }
+    return objs[idx];
+}
+
 void print_lines(const Out& out, const std::vector<std::string>& lines, size_t max = 200) {
     for (size_t i = 0; i < lines.size() && i < max; ++i) out(lines[i]);
     if (lines.size() > max) out("... " + std::to_string(lines.size() - max) + " more");
@@ -317,6 +351,28 @@ void register_all(const LazarusApi* a, LazarusMod* m) {
             if (f.empty() || lower(l).find(f) != std::string::npos) hits.push_back(l);
         print_lines(out, hits, 400);
         out(std::to_string(hits.size()) + " distinct component(s)");
+    });
+    reg("inspect", "dump a live object's fields: inspect <Ns.Class>[#n]", [](auto& args, auto& out) {
+        if (args.size() < 2) return out("usage: inspect <Ns.Class>[#n]   e.g. inspect Lucille.BossSystem.BossSystem");
+        size_t idx = 0;
+        il2::Obj* o = live_object(args[1], idx, out);
+        if (!o) return;
+        std::vector<std::string> lines;
+        if (!il2::describe(o, lines)) return out("this build doesn't export field type info");
+        out(il2::class_name(il2::class_of(o)) + " #" + std::to_string(idx) + " on '" + il2::object_name(o) + "':");
+        print_lines(out, lines, 300);
+    });
+    reg("invoke", "call a method on a live object: invoke <Ns.Class>[#n] <Method> [args...]", [](auto& args, auto& out) {
+        if (args.size() < 3) return out("usage: invoke <Ns.Class>[#n] <Method> [true|false|number|text|null ...]");
+        if (is_destructive_cheat(args[2])) return out(args[2] + " looks like it touches saves, use cheat-unsafe for that");
+        size_t idx = 0;
+        il2::Obj* o = live_object(args[1], idx, out);
+        if (!o) return;
+        std::string result, err;
+        std::vector<std::string> margs(args.begin() + 3, args.end());
+        api->log(self, LAZARUS_LOG_INFO, "invoke %s on %s #%zu", args[2].c_str(), args[1].c_str(), idx);
+        if (il2::call_with_args(o, args[2], margs, result, err)) out(args[2] + ": " + result);
+        else out(args[2] + " failed: " + err);
     });
     reg("methods", "list methods of a class: methods <Ns.Class> [filter]", [](auto& args, auto& out) {
         if (args.size() < 2) return out("usage: methods <Ns.Class> [filter]");
