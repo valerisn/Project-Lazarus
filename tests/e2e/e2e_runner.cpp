@@ -358,6 +358,32 @@ int wmain() {
         dump_on_fail(run);
     });
 
+    scenario("method-trace: logs args and returns, forwards them intact, refuses floats", [] {
+        reset(false);
+        configure("[loader]\nignore_build_check = true\n[mods]\nenabled = method-trace\n", "normal");
+        spit(lz() / "mods" / "method-trace" / "config.ini",
+             "[methods]\n"
+             "t1 = Lucille.Fake.dll | Lucille.Fake.FakeGame | Tick | 2\n"
+             "t2 = Lucille.Fake.dll | Lucille.Fake.FakeGame | Reset | 1\n"
+             "t3 = Lucille.Fake.dll | Lucille.Fake.FakeGame | SetSpeed | 1\n"
+             "t4 = Lucille.Fake.dll | Lucille.Fake.FakeGame | Nope | 0\n"
+             "t5 = garbage line\n");
+        auto run = launch();
+        expect(run.r("finished") == "1", "game finished");
+        // the actual point: values make it through the detour untouched
+        expect(run.r("tick") == "43", "instance (this, bool, int) -> int forwarded: " + run.r("tick"));
+        expect(run.r("reset") == "1", "static (int) -> bool forwarded: " + run.r("reset"));
+        expect(run.has("FakeGame.Tick(true, 21)"), "instance args logged, this skipped");
+        expect(run.has("FakeGame.Tick -> 43"), "int return logged");
+        expect(run.has("FakeGame.Reset(7)"), "static args logged");
+        expect(run.has("FakeGame.Reset -> true"), "bool return logged");
+        expect(run.has("can't trace Lucille.Fake.FakeGame.SetSpeed/1: arg 0 is a float/struct"), "float refused");
+        expect(run.has("can't trace Lucille.Fake.FakeGame.Nope/0: not found"), "missing method reported");
+        expect(run.has("[methods] t5:"), "bad line reported");
+        expect(run.has("tracing 2 method(s), 3 skipped"), "summary");
+        dump_on_fail(run);
+    });
+
     scenario("missing lazarus.ini: defaults, nothing loaded", [] {
         reset(false);
         configure(kEnabled, "normal");

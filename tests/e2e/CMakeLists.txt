@@ -45,3 +45,8 @@ add_dependencies(e2e_runner dev_console)
 add_custom_command(TARGET e2e_runner POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:dev_console> ${STAGE}/Lazarus/mods/dev-console/dev_console.dll
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_SOURCE_DIR}/mods/dev-console/mod.ini ${STAGE}/Lazarus/mods/dev-console/mod.ini)
+
+add_dependencies(e2e_runner method_trace)
+add_custom_command(TARGET e2e_runner POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:method_trace> ${STAGE}/Lazarus/mods/method-trace/method_trace.dll
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PROJECT_SOURCE_DIR}/mods/method-trace/mod.ini ${STAGE}/Lazarus/mods/method-trace/mod.ini)

@@ -26,6 +26,7 @@ add_subdirectory(mods/dev-console)
 add_subdirectory(mods/skip-intro)
 add_subdirectory(mods/mouse-sensitivity)
 add_subdirectory(mods/key-rebind)
+add_subdirectory(mods/method-trace)
 add_subdirectory(examples/hello-mod)
 add_subdirectory(tests)
 
@@ -38,4 +39,4 @@ add_custom_target(dist ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST}/Lazarus/mods
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/installer ${DIST}
   COMMENT "Assembling build/dist")
-add_dependencies(dist lazarus_proxy graphics_settings fps_counter dev_console skip_intro mouse_sensitivity key_rebind lazarus_write_default_config)
+add_dependencies(dist lazarus_proxy graphics_settings fps_counter dev_console skip_intro mouse_sensitivity key_rebind method_trace lazarus_write_default_config)

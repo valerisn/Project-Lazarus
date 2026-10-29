@@ -12,16 +12,24 @@
 
 namespace {
 
+struct FakeType;
 struct FakeMethodInfo {
     void* methodPointer;  // has to be first, same as the real MethodInfo
     const char* name;
     int argc;
+    // everything below only matters to the method tracer
+    uint32_t flags;
+    FakeType* ret;
+    FakeType* params[3];
 };
 struct FakeClass {
     const char* ns;
     const char* name;
     FakeMethodInfo* methods;
     int count;
+};
+struct FakeType {
+    int code;  // IL2CPP_TYPE_*
 };
 struct FakeImage {
     const char* name;
@@ -60,10 +68,24 @@ __declspec(noinline) int FakeGame_GetValue(const void*) {
 }
 
 FakeMethodInfo g_scene_methods[] = {{(void*)&Internal_SceneLoaded, "Internal_SceneLoaded", 2}};
-FakeMethodInfo g_game_methods[] = {{(void*)&FakeGame_GetValue, "GetValue", 0}};
+// for the tracer: (this, bool, int) -> int, static (int) -> bool, and a
+// float one it has to refuse
+__declspec(noinline) int32_t FakeGame_Tick(void* self, bool b, int32_t n, const void*) {
+    return self ? n * 2 + (b ? 1 : 0) : -1;
+}
+__declspec(noinline) bool FakeGame_Reset(int32_t n, const void*) { return n == 7; }
+__declspec(noinline) void FakeGame_SetSpeed(void*, float, const void*) {}
+
+FakeType t_void{0x01}, t_bool{0x02}, t_int{0x08}, t_float{0x0c};
+FakeMethodInfo g_game_methods[] = {
+    {(void*)&FakeGame_GetValue, "GetValue", 0},
+    {(void*)&FakeGame_Tick, "Tick", 2, 0, &t_int, {&t_bool, &t_int}},
+    {(void*)&FakeGame_Reset, "Reset", 1, 0x10, &t_bool, {&t_int}},
+    {(void*)&FakeGame_SetSpeed, "SetSpeed", 1, 0, &t_void, {&t_float}},
+};
 FakeMethodInfo g_input_methods[] = {{(void*)&NotifyBeforeUpdate, "NotifyBeforeUpdate", 1}};
 FakeClass g_core_classes[] = {{"UnityEngine.SceneManagement", "SceneManager", g_scene_methods, 1}};
-FakeClass g_game_classes[] = {{"Lucille.Fake", "FakeGame", g_game_methods, 1}};
+FakeClass g_game_classes[] = {{"Lucille.Fake", "FakeGame", g_game_methods, 4}};
 FakeClass g_input_classes[] = {{"UnityEngineInternal.Input", "NativeInputSystem", g_input_methods, 1}};
 FakeImage g_images[] = {{"UnityEngine.CoreModule.dll", g_core_classes, 1},
                         {"Lucille.Fake.dll", g_game_classes, 1},
@@ -178,6 +200,14 @@ EXPORT void* il2cpp_resolve_icall(const char* name) {
         if (!std::strcmp(name, e.name)) return e.fn;
     return nullptr;
 }
+EXPORT uint32_t il2cpp_method_get_flags(void* m, uint32_t* iflags) {
+    if (iflags) *iflags = 0;
+    return static_cast<FakeMethodInfo*>(m)->flags;
+}
+EXPORT void* il2cpp_method_get_param(void* m, uint32_t i) { return i < 3 ? static_cast<FakeMethodInfo*>(m)->params[i] : nullptr; }
+EXPORT void* il2cpp_method_get_return_type(void* m) { return static_cast<FakeMethodInfo*>(m)->ret; }
+EXPORT int il2cpp_type_get_type(void* t) { return static_cast<FakeType*>(t)->code; }
+EXPORT void* il2cpp_class_from_type(void*) { return nullptr; }  // only primitives in here
 EXPORT uint32_t il2cpp_array_length(void* arr) {
     return (uint32_t) reinterpret_cast<size_t*>(static_cast<char*>(arr) + 24)[0];
 }
@@ -208,6 +238,16 @@ EXPORT void fake_game_meddle() {
     g_target_frame_rate = 30;
     g_vsync = 1;
 }
+int g_fake_game_obj = 0;
+EXPORT int fake_game_tick(bool b, int32_t n) {
+    auto fn = reinterpret_cast<int32_t (*)(void*, bool, int32_t, const void*)>(g_game_methods[1].methodPointer);
+    return fn(&g_fake_game_obj, b, n, &g_game_methods[1]);
+}
+EXPORT int fake_game_reset(int32_t n) {
+    auto fn = reinterpret_cast<bool (*)(int32_t, const void*)>(g_game_methods[2].methodPointer);
+    return fn(n, &g_game_methods[2]) ? 1 : 0;
+}
+
 EXPORT int fake_state(const char* what) {
     if (!std::strcmp(what, "init")) return g_init_called;
     if (!std::strcmp(what, "shutdown")) return g_shutdown_called;

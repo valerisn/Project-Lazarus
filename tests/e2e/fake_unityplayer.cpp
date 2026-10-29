@@ -101,6 +101,9 @@ extern "C" __declspec(dllexport) int fake_unity_main(const wchar_t* report_path)
         Sleep(5);
     }
     std::fprintf(r, "notify_calls=%d\n", state("notify_calls"));
+    auto tick = reinterpret_cast<int (*)(bool, int)>(GetProcAddress(ga, "fake_game_tick"));
+    auto reset = reinterpret_cast<int (*)(int)>(GetProcAddress(ga, "fake_game_reset"));
+    std::fprintf(r, "tick=%d\nreset=%d\n", tick(true, 21), reset(7));
     std::fprintf(r, "scene_listener_calls=%d\n", state("scene_listener"));
     std::fprintf(r, "value_in_game=%d\n", get_value());
     for (const char* k : {"target_frame_rate", "vsync", "quality", "lod_x100", "aniso", "res_w", "res_h", "res_mode", "res_hz"})
