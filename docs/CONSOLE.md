@@ -24,6 +24,10 @@ It isn't known yet whether the release build actually spawns the `LucilleCheats`
 | `mods` | loaded mods and their status |
 | `collections [filter]` | level/scene collections currently in memory, with `#index` |
 | `load <name part \| #index>` | load a level through the game's own loader, e.g. `load TooFarGone` |
+| `levels [filter]` | the game's full level list (from `MomentSystem`), works from the main menu |
+| `start <name part>` | start a level **as a new game** through the game's own `MomentSystem.LoadLevel(level, true)`, so the playthrough gets set up. Works from the main menu. Falls back to a plain load if that call isn't usable |
+| `items [filter]` | item names in the game's item pool |
+| `give <name> [amount]` | give yourself an item. `rifle`, `shotgun`, `pistol`, `colt`, `sniper`, `crossbow`, `katana`, `machete`, `bat`... use the developers' equip cheat when available, otherwise `InventoryManager.TestAddItem` |
 | `scenes` | Unity scenes loaded right now |
 | `cheats` | state of the developer cheats (or whether the cheat object exists) |
 | `god`, `immortal`, `instakill`, `ammo`, `stamina`, `invisible` | toggle that cheat; prints the new state |
@@ -49,10 +53,18 @@ Put commands in `[autoexec]` in the console's `config.ini`. They run once per se
 
 ```ini
 [autoexec]
-commands = load TooFarGone; god
+commands = start 23a_
 after_scene = Main Menu
 delay_frames = 120
+; then, once the level's gameplay scene is up:
+in_level = Gameplay_TooFarGone
+level_commands = give rifle;god
+level_delay_frames = 300
 ```
+
+Don't put a space before a `;`, because ` ;` starts a comment in these files.
+
+`TooFarGone` alone matches two levels (`23a_...PreScene` and `23_...`), so use a more exact part of the name.
 
 ## Level collections in this build
 
@@ -95,7 +107,7 @@ Only collections already in memory can be loaded. If `collections` comes up shor
 
 Enable `dev-console` and `method-trace` in `lazarus.ini` and set `log_level = debug`. method-trace ships with the finale's boss, QTE, defining-moment, objective and input-lock methods preloaded.
 
-1. `load TooFarGone` (or `collections TooFarGone` to see the exact names), then `god`.
+1. From the main menu: `start 23a_` (the cinematic lead-in, then the fight). `levels TooFarGone` shows the exact names. Once you're in, `give rifle` and `god`.
 2. Play to the freeze or the "can only walk" phase.
 3. Open the console and grab the state:
    * `inspect Lucille.BossSystem.BossSystem` (look at `_bossFightState`, `_bossPartState`, `_bossPart`, `_waitCutsceneEnd`, `_waitGameplayEnd`)
