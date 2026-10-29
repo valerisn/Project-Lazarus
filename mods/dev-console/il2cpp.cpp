@@ -46,6 +46,8 @@ int (*type_get_type)(void*);
 void* (*class_from_type)(void*);
 bool (*class_is_enum)(void*);
 bool (*class_is_valuetype)(void*);
+int32_t (*class_array_element_size)(void*);
+void* (*class_get_element_class)(void*);
 
 template <typename T>
 void want(T& fn, const char* name) {
@@ -97,6 +99,8 @@ bool init(const LazarusApi* api) {
     want(class_from_type, "il2cpp_class_from_type");
     want(class_is_enum, "il2cpp_class_is_enum");
     want(class_is_valuetype, "il2cpp_class_is_valuetype");
+    want(class_array_element_size, "il2cpp_class_array_element_size");
+    want(class_get_element_class, "il2cpp_class_get_element_class");
     return g_missing == nullptr;
 }
 
@@ -298,6 +302,91 @@ std::string fmt_field(void* type, const char* p) {
 }
 
 }  // namespace
+
+namespace {
+
+void* field_named(Klass* k, const char* name) {
+    for (; k; k = class_get_parent(k))
+        if (void* f = class_get_field_from_name(k, name)) return f;
+    return nullptr;
+}
+
+// T[] straight, or List<T>'s backing _items + _size. returns the array and count
+Obj* backing_array(Obj* o, uint32_t& count) {
+    count = 0;
+    if (!o) return nullptr;
+    Klass* k = class_of(o);
+    std::string n = class_get_name(k);
+    if (!n.empty() && n.back() == ']') {  // "Foo[]"
+        count = array_length(o);
+        return o;
+    }
+    if (n.rfind("List`1", 0) == 0 && field_get_offset) {
+        void* items_f = field_named(k, "_items");
+        void* size_f = field_named(k, "_size");
+        if (!items_f || !size_f) return nullptr;
+        Obj* arr = *reinterpret_cast<Obj**>(static_cast<char*>(o) + field_get_offset(items_f));
+        int32_t size = *reinterpret_cast<int32_t*>(static_cast<char*>(o) + field_get_offset(size_f));
+        if (!arr || size < 0) return nullptr;
+        count = (uint32_t)size;
+        if (count > array_length(arr)) count = array_length(arr);  // shouldn't happen, but don't read past it
+        return arr;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+Obj* ref_field(Obj* o, const char* name) {
+    if (!o || !field_get_offset) return nullptr;
+    void* f = field_named(class_of(o), name);
+    if (!f) return nullptr;
+    return *reinterpret_cast<Obj**>(static_cast<char*>(o) + field_get_offset(f));
+}
+
+std::vector<Obj*> elements(Obj* o) {
+    std::vector<Obj*> out;
+    uint32_t n = 0;
+    Obj* arr = backing_array(o, n);
+    if (!arr) return out;
+    Klass* ek = class_get_element_class ? class_get_element_class(class_of(arr)) : nullptr;
+    if (ek && class_is_valuetype && class_is_valuetype(ek)) return out;  // structs: use struct_strings
+    Obj** items = array_items(arr);
+    for (uint32_t i = 0; i < n; ++i) out.push_back(items[i]);
+    return out;
+}
+
+std::vector<std::string> struct_strings(Obj* o, const char* field) {
+    std::vector<std::string> out;
+    uint32_t n = 0;
+    Obj* arr = backing_array(o, n);
+    if (!arr || !class_get_element_class || !class_array_element_size || !field_get_offset) return out;
+    Klass* ek = class_get_element_class(class_of(arr));
+    if (!ek || !class_is_valuetype || !class_is_valuetype(ek)) return out;
+    void* f = class_get_field_from_name(ek, field);
+    if (!f) return out;
+    // value type field offsets still count the 16 byte object header, the
+    // array elements don't have one
+    size_t off = field_get_offset(f) - 16;
+    int32_t stride = class_array_element_size(class_of(arr));
+    char* base = reinterpret_cast<char*>(arr) + 32;
+    for (uint32_t i = 0; i < n; ++i) {
+        Obj* str = *reinterpret_cast<Obj**>(base + (size_t)stride * i + off);
+        out.push_back(str ? to_utf8(str) : "");
+    }
+    return out;
+}
+
+int param_type(Method* m, int i, std::string* cls) {
+    if (!m || !method_get_param || !type_get_type) return -1;
+    void* t = method_get_param(m, (uint32_t)i);
+    if (!t) return -1;
+    if (cls && class_from_type) {
+        void* k = class_from_type(t);
+        *cls = k ? class_name(k) : "";
+    }
+    return type_get_type(t);
+}
 
 bool describe(Obj* o, std::vector<std::string>& out) {
     if (!o || !field_get_type || !field_get_offset || !type_get_type) return false;

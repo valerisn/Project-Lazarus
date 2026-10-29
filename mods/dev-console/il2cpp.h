@@ -53,6 +53,18 @@ std::vector<Obj*> find_in_scenes(Klass* k, std::string& err);
 // found out the logos were VideoPlayers
 std::vector<std::string> census(std::string& err);
 
+// reference-type instance field by name (walks base classes). null if missing
+Obj* ref_field(Obj* o, const char* name);
+
+// elements of a T[] or List<T> where T is a class. empty for anything else
+std::vector<Obj*> elements(Obj* list_or_array);
+
+// for T[] / List<T> where T is a struct: the string field `field` of each element
+std::vector<std::string> struct_strings(Obj* list_or_array, const char* field);
+
+// IL2CPP_TYPE_* of parameter i, -1 if unknown. class name of it in cls if there is one
+int param_type(Method* m, int i, std::string* cls = nullptr);
+
 // every instance field as "name = value", own class first then base classes,
 // stopping at unity's own types. false if the type info exports are missing
 bool describe(Obj* o, std::vector<std::string>& out);
