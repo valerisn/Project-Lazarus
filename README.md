@@ -28,6 +28,7 @@ The PC release of *The Walking Dead: Destinies* (Steam App ID 2192790) shipped w
 | **dev-console** | Press **F6** for a console. Jump to any level (`load TooFarGone`), use the developers' own cheats that shipped in the game (god mode, skip objective, end level...), inspect game objects, autoexec at startup. See [docs/CONSOLE.md](docs/CONSOLE.md). The console opens in game; level and cheat commands are untested. |
 | **mouse-sensitivity** | Separate look-speed scale for mouse and controller, on top of the in-game slider. *Experimental.* |
 | **key-rebind** | Rebind any control from a config file. Writes the game's full action list to JSON so you know what to type. *Experimental.* |
+| **method-trace** | Debug tool. Logs calls to chosen game methods (boss phases, QTEs, objectives, input locks) to pin down softlocks. Forwarding verified against the fake engine; not yet run in game. |
 
 ### Under investigation
 

@@ -36,6 +36,9 @@ It isn't known yet whether the release build actually spawns the `LucilleCheats`
 | `find <Ns.Class> [filter]` | names of live objects of a type |
 | `methods <Ns.Class> [filter]`, `fields <Ns.Class>` | list a class's members |
 | `call <Ns.Class> <Method>` | call a parameterless static method |
+| `inspect <Ns.Class>[#n]` | every field of a live object, e.g. `inspect Lucille.BossSystem.BossSystem`. Not yet run in game |
+| `invoke <Ns.Class>[#n] <Method> [args]` | call a method on a live object; args are `true`/`false`, numbers, text or `null`. Not yet run in game |
+| `trace.list`, `trace.add`, `trace.mute` | from the method-trace mod: what's traced, add a method at runtime, pause logging |
 | `echo`, `clear` | |
 
 Other mods can add their own commands with `register_command` (API v2).
@@ -87,3 +90,25 @@ From the game's Addressables catalog. `load` matches any unique part of the name
 (Episode mapping is inferred from asset names. WGC Facility = West Georgia Correctional, the prison.)
 
 Only collections already in memory can be loaded. If `collections` comes up short at the main menu, try again from inside a mission or HQ, and please post the log. Loading assets that aren't in memory yet is the next step if it turns out to be needed.
+
+## Chasing a softlock (Governor finale, #4)
+
+Enable `dev-console` and `method-trace` in `lazarus.ini` and set `log_level = debug`. method-trace ships with the finale's boss, QTE, defining-moment, objective and input-lock methods preloaded.
+
+1. `load TooFarGone` (or `collections TooFarGone` to see the exact names), then `god`.
+2. Play to the freeze or the "can only walk" phase.
+3. Open the console and grab the state:
+   * `inspect Lucille.BossSystem.BossSystem` (look at `_bossFightState`, `_bossPartState`, `_bossPart`, `_waitCutsceneEnd`, `_waitGameplayEnd`)
+   * `inspect Lucille.ObjectiveSystem.ObjectiveController`
+   * `inspect Lucille.DefiningMomentSystem.DefiningMomentController`
+   * `inspect Lucille.BossSystem.BossDuelQTE`
+   * `trace.list` (call counts show what's still ticking)
+4. Things to try, one at a time (note which one, if any, unsticks it):
+   * `invoke Lucille.BaseCharacter.PlayerInputsReader TogglePlayerInput true`
+   * `invoke Lucille.BossSystem.BossDuelQTE OnQteSuccess`
+   * `invoke Lucille.DefiningMomentSystem.DefiningMomentController TriggerResult true`
+   * `invoke Lucille.BossSystem.BossSystem CutsceneEnd` / `GameplayEnd`
+   * `skipobj`
+5. Quit and attach `lazarus.log`. The trace lines right before the stall are the interesting part.
+
+These calls poke the game's internal state. Back up your save first.
